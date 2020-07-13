@@ -1,0 +1,11 @@
+[package]
+name    = "rpcheck"
+version = "0.0.1"
+authors = ["HerbM <HerbMartin@GMail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# pico-args = "0.3.3"
+clap = "3.0.0-beta.1"  

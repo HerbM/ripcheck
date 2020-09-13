@@ -21,6 +21,7 @@ dnsclient = { git = "https://github.com/jedisct1/rust-dnsclient" }
 prettytable-rs = "^0.8"
 
 tokio = { version = "*", features = ["full", "tracing", "time"] }
+rand = "*"
 futures = { version = "0.3.*"}
 log = "0.4.*"
 env_logger = "0.7.*"

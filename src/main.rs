@@ -15,11 +15,13 @@ use std::net::*;
 use std::env;
 use std::io::{self, BufRead};
 use std::fs::File;
+
 use std::path::Path;
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;  //, Instant};
 use tokio::runtime;
+use tokio::runtime::Runtime;
 use tokio::time::*;
 use futures::future::*;
 use rand::*;
@@ -29,8 +31,12 @@ use rand::*;
 // use std::io::prelude::*;
 
 pub const STDIN_FILENO: i32 = 0;
-static DEFAULTDNSSERVERS: [&'static str; 2] = ["103.86.99.99", "103.86.96.96"];
-fn get_dnsserver() -> [&'static str; 2] { DEFAULTDNSSERVERS }
+// static DEFAULTDNSSERVERS: Vec<&'static str> = vec!["103.86.99.99", "103.86.96.96"];
+static DEFAULTDNSSERVERS: [&str; 2] = ["103.86.99.99", "103.86.96.96"];
+// static DEFAULTDNSSERVERS: std::vec::Vec<&'static str> = ["103.86.99.99", "103.86.96.96"];
+// static DEFAULTDNSSERVERS: std::vec::Vec<&'static str> = std::vec::Vec.new(["103.86.99.99", "103.86.96.96"]);
+//static DEFAULTDNSSERVERS: [&str; 2] = ["103.86.99.99", "103.86.96.96"];
+// fn get_dnsserver() -> [&str; 2] { DEFAULTDNSSERVERS }
 
 fn piped_input() -> bool { unsafe { libc::isatty(STDIN_FILENO as i32) == 0 } }
 
@@ -91,7 +97,7 @@ where P: AsRef<Path>, {
 }
 
 
-struct _CheckConfig {
+struct _Config {
   wait:       u64,
   verbose:    bool,
   showheader: bool,
@@ -153,15 +159,70 @@ fn _ipv4Addr_to_u32(ipaddress: Ipv4Addr) -> u32 {
 }
 
 
-lazy_static!{static ref MATCHES: clap::ArgMatches = parse_args();}
 
-async fn t() {
-  let rt = runtime::Builder::new()
-    .threaded_scheduler()
-    .core_threads(4)
-    .enable_all()
-    .build()
-    .unwrap();
+lazy_static!{static ref MATCHES: clap::ArgMatches = parse_args();}
+lazy_static!{static ref RUNTIME: Runtime = runtime::Builder::new()
+  .threaded_scheduler()
+  .core_threads(4)
+  .enable_all()
+  .build()
+  .unwrap();
+}
+
+async fn __test_tcp_portlist(host: &String, name: &String, portlist: &Vec<String>, wait: Duration, hostwidth: usize) {
+  let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
+  for p in portlist.clone() {
+    let h = host.clone();
+    // task = Duration::from_millis(0)).then(async move |_| {
+      // let task = delay_for(
+      //   Duration::from_millis(delay)).then(async move |_| {
+      //     println!("Delay {} ms done! thread name: {}", delay, thread::current().name().unwrap());
+      //     Ok(true) as Result<bool, std::io::Error>
+      //   }
+      // );
+
+    threads.push(std::thread::spawn(move || -> bool {
+      test_tcp_socket_address(&h, &p, wait)
+    }));
+  }
+  let length = threads.len();
+  let mut results: Vec<String> = Vec::with_capacity(length); // vec![; length];
+  for t in threads {
+    let result = format!("{}", t.join().unwrap_or(false));
+    results.push(result);
+  }
+  println!("{:<15} {:<width$} {}", host, name, results.join("\t"), width=hostwidth);
+  // RUNTIME.shutdown_background();
+}
+
+// async fn test_tcp_portlist(host: &str) {
+// async fn test_tcp_portlist(host: &String, portlist: &Vec<String>, wait: Duration, hostwidth: usize) {
+    // println!("Testing {}", host);
+// }
+async fn test_tcp_portlist(host: &str) {
+  println!("Testing {}", host);
+}
+
+// async fn _test_tcp_portlist(host: &String, name: &String, portlist: &Vec<String>, wait: Duration, hostwidth: usize) {
+//   let mut tasks = vec![];  // Vec<std::thread::JoinHandle<bool>>
+//   for p in portlist.clone() {
+//     let h = host.clone();
+//     let task = async move |_| -> bool {
+//       test_tcp_socket_address(&h, &p, wait)
+//     };
+//     tasks.push(rt.spawn(task));
+//   }
+//   let length = threads.len();
+//   let mut results: Vec<String> = Vec::with_capacity(length); // vec![; length];
+//   for t in tasks {
+//     let result = format!("{}", t.join().unwrap_or(false));
+//     results.push(result);
+//   }
+//   println!("{:<15} {:<width$} {}", host, name, results.join("\t"), width=hostwidth);
+// }
+
+// techempower.com benchmarks      cargo add cargo whatfeatures
+async fn _t() {
   let mut tasks = vec![];
   for _ in 0..100 {
     let delay = rand::thread_rng().gen_range(1000, 2000);
@@ -171,44 +232,54 @@ async fn t() {
         Ok(true) as Result<bool, std::io::Error>
       }
     );
-    tasks.push(rt.spawn(task));
+    tasks.push(RUNTIME.spawn(task));
   }
   let mut success = true;
   for task in tasks {
-    success = success && task.await.unwrap().unwrap_or(false);
+    success = success & task.await.unwrap().unwrap_or(false);
   }
-  rt.shutdown_background();
   println!("Result: {}", success);
 }
 
 // lazy_static!{static ref DEFAULTDNSSERVERS:Vec<&'static str> = getDefaultDNSServers();}
 #[tokio::main]
 async fn main() {  // -> io::Result<()> {
-  t().await;
+  // t().await;
   println!("returned from calling t()");
-  let out = std::process::Command::new("netsh.exe").args(&["interface", "ipv4", "show","dns"])
-                                          .output().expect("Couldn't run netsh");
-  let out = format!("{:?}", out);
+  //rt.shutdown_background();
+  let cmd = std::process::Command::new("netsh.exe").args(&["interface", "ipv4", "show","dns"])
+                                                   .output().expect("Couldn't run netsh");
+  let out = format!("{:?}", cmd);
   let separator = Regex::new(r"[^.\d]|[\r\n]+").unwrap();
-  let dnsDefaultServers: Vec<_> = separator.split(&out).into_iter().filter(|s| s.len() > 6).collect();
+  let dnsDefaultServers: Vec<&str> = separator.split(&out)
+                                              .into_iter()
+                                              .filter(|s| s.len() > 6).collect();
 
-  let verbose          = MATCHES.is_present("VERBOSE");
-  let showheader: bool       =!MATCHES.is_present("NOHEADER");
-  let from_file:  bool       = MATCHES.is_present("FILENAME");
-  let mut wait: u64          = MATCHES.value_of ("TIMEOUT").unwrap().parse::<u64>().unwrap_or(4000);
+  let verbose:    bool  = MATCHES.is_present("VERBOSE");
+  let showheader: bool =!MATCHES.is_present("NOHEADER");
+  let from_file:  bool = MATCHES.is_present("FILENAME");
+  let mut wait:   u64  = MATCHES.value_of  ("TIMEOUT").unwrap().parse::<u64>().unwrap_or(4000);
   if wait < 100 { wait *= 1000; }   // must be in seconds & nanoseconds
-  let seconds: u64 = wait / 1000;
-  let nanoseconds = wait as u32 % 1000 * 1000000;
+  let seconds:    u64  = wait / 1000;
+  let nanoseconds:u32  = wait as u32 % 1000 * 1_000_000;
   // lazy_static!{static ref timeout: Duration = Duration::new(seconds, nanoseconds); }
   let timeout = Duration::new(seconds, nanoseconds);
-  let ports: Vec<String>     = MATCHES.values_of("PORT").unwrap().map(|s| s.to_string()).collect();
-  let nsAddress: Vec<String> = if MATCHES.is_present("NAMESERVER") {
-    MATCHES.values_of("NAMESERVER").unwrap().map(|s| s.to_string()).collect()
+  // let ports: Vec<String>     = MATCHES.values_of("PORT").unwrap().map(|s| s.to_string()).collect();
+  let ports: Vec<&str>     = MATCHES.values_of("PORT").unwrap().collect();
+  let nsAddress: Vec<&'static str> = if MATCHES.is_present("NAMESERVER") {
+    MATCHES.values_of("NAMESERVER").unwrap().collect()
   } else if &dnsDefaultServers.len() > &0 {
-      dnsDefaultServers.iter().map(|s| s.to_string()).collect()
+    dnsDefaultServers
   } else {
-      get_dnsserver().iter().map(|s| s.to_string()).collect()
+    vec!["103.86.99.99", "103.86.96.96"]
   };
+  // let nsAddress: Vec<String> = if MATCHES.is_present("NAMESERVER") {
+  //   MATCHES.values_of("NAMESERVER").unwrap().map(|s| s.to_string()).collect()
+  // } else if &dnsDefaultServers.len() > &0 {
+  //     dnsDefaultServers.iter().map(|s| s.to_string()).collect()
+  // } else {
+  //     get_dnsserver().iter().map(|s| s.to_string()).collect()
+  // };
   if verbose { for dnsServer in dnsDefaultServers { println!("{}", dnsServer); } }
   let nsSocket: Vec<SocketAddr> =
   nsAddress.iter().filter_map(|ns| format!("{}:53", ns).parse::<SocketAddr>().ok()).collect();
@@ -244,7 +315,8 @@ async fn main() {  // -> io::Result<()> {
   for h in hosts.iter() {
     if h.len() > hostwidth { hostwidth = h.len() }
   };
-  let mut threads: Vec<std::thread::JoinHandle<()>> = Vec::new();
+  // let mut threads: Vec<std::thread::JoinHandle<()>> = Vec::new();
+  let mut tasks    = vec![];
   let port_count = ports.len();
   let port_names = ports.join("  \t");
   let all_fail   = vec!["false"; port_count].join("\t");
@@ -272,11 +344,22 @@ async fn main() {  // -> io::Result<()> {
       continue;
     }
     let portlist = ports.clone();
-    threads.push(std::thread::spawn(move || {
-      test_tcp_portlist(&ipAddress, &host, &portlist, timeout, hostwidth)
-    }));
+    // threads.push(std::thread::spawn(move || {
+    //   test_tcp_portlist(&ipAddress, &host, &portlist, timeout, hostwidth)
+    // }));
+    // let task = async move {
+    //   test_tcp_portlist(&ipAddress, &host, &portlist, timeout, hostwidth);
+    // };
+    // tasks.push(RUNTIME.spawn(task));
+    // tasks.push(test_tcp_portlist(&host, &portlist, timeout, hostwidth));
+    tasks.push(test_tcp_portlist(&host));
   }
-  for t in threads { let _ = t.join(); }
+  futures::future::join_all(tasks).await;
+  // for task in tasks {
+  //   task.await.unwrap();
+  // }
+  // RUNTIME.shutdown_background();
+  //RUNTIME.run();
   // Ok(())
 }
 
@@ -286,7 +369,7 @@ fn test_tcp_socket_address(address: &str, port: &str, timeout: Duration) -> bool
   TcpStream::connect_timeout(socket_addr, timeout).is_ok()
 }
 
-fn test_tcp_portlist(host: &String, name: &String, portlist: &Vec<String>, wait: Duration, hostwidth: usize) {
+fn _test_tcp_portlist(host: &String, name: &String, portlist: &Vec<String>, wait: Duration, hostwidth: usize) {
   let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
   for p in portlist.clone() {
     let h = host.clone();
@@ -302,9 +385,3 @@ fn test_tcp_portlist(host: &String, name: &String, portlist: &Vec<String>, wait:
   }
   println!("{:<15} {:<width$} {}", host, name, results.join("\t"), width=hostwidth);
 }
-
-/*
-hostname address maxwidth results
-
-format!("{}{}{}", foo, "-".repeat(total_width - foo.len() - bar.len()), bar)
-*/

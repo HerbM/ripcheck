@@ -30,9 +30,11 @@ use rand::*;
 // use std::io::Command;
 // use std::io::prelude::*;
 
+const DEFAULTDNSSERVERS: [&str; 2] = ["103.86.99.99", "103.86.96.96"];
+
 pub const STDIN_FILENO: i32 = 0;
 // static DEFAULTDNSSERVERS: Vec<&'static str> = vec!["103.86.99.99", "103.86.96.96"];
-static DEFAULTDNSSERVERS: [&str; 2] = ["103.86.99.99", "103.86.96.96"];
+// static DEFAULTDNSSERVERS: [&str; 2] = ["103.86.99.99", "103.86.96.96"];
 // static DEFAULTDNSSERVERS: std::vec::Vec<&'static str> = ["103.86.99.99", "103.86.96.96"];
 // static DEFAULTDNSSERVERS: std::vec::Vec<&'static str> = std::vec::Vec.new(["103.86.99.99", "103.86.96.96"]);
 //static DEFAULTDNSSERVERS: [&str; 2] = ["103.86.99.99", "103.86.96.96"];
@@ -199,8 +201,10 @@ async fn __test_tcp_portlist(host: &String, name: &String, portlist: &Vec<String
 // async fn test_tcp_portlist(host: &String, portlist: &Vec<String>, wait: Duration, hostwidth: usize) {
     // println!("Testing {}", host);
 // }
+// async fn test_tcp_portlist(host: &'static String, name: &String, portlist: &Vec<String>, wait: Duration, hostwidth: usize) {
 async fn test_tcp_portlist(host: &str) {
   println!("Testing {}", host);
+  // test_tcp_socket_address(host, &p, wait)
 }
 
 // async fn _test_tcp_portlist(host: &String, name: &String, portlist: &Vec<String>, wait: Duration, hostwidth: usize) {
@@ -222,6 +226,7 @@ async fn test_tcp_portlist(host: &str) {
 // }
 
 // techempower.com benchmarks      cargo add cargo whatfeatures
+
 async fn _t() {
   let mut tasks = vec![];
   for _ in 0..100 {
@@ -245,8 +250,27 @@ async fn _t() {
 #[tokio::main]
 async fn main() {  // -> io::Result<()> {
   // t().await;
-  println!("returned from calling t()");
+  // println!("returned from calling t()");
   //rt.shutdown_background();
+  let iprange = ipnet::Ipv4AddrRange::new(
+    "10.0.0.0".parse().unwrap(),
+    "10.0.0.3".parse().unwrap(),
+  );
+  for ip in iprange {
+    println!("{:?}", ip);
+  }
+  for adapter in ipconfig::get_adapters()
+      .unwrap().into_iter()
+      .filter(|a | a.oper_status() == ipconfig::OperStatus::IfOperStatusUp) 
+      .filter(|a | a.dns_servers().len() > 0) {
+    println!("Name: {}", adapter.friendly_name());
+    println!("Ip addresses: {:#?}", adapter.ip_addresses());
+    println!("Dns servers: {:#?}", adapter.dns_servers());
+  }
+  let net: ipnet::Ipv4Net = "10.1.1.0/28".parse().unwrap();
+  for ip in net.hosts() {
+    println!("{:?}", ip);
+  }
   let cmd = std::process::Command::new("netsh.exe").args(&["interface", "ipv4", "show","dns"])
                                                    .output().expect("Couldn't run netsh");
   let out = format!("{:?}", cmd);
@@ -255,7 +279,7 @@ async fn main() {  // -> io::Result<()> {
                                               .into_iter()
                                               .filter(|s| s.len() > 6).collect();
 
-  let verbose:    bool  = MATCHES.is_present("VERBOSE");
+  let verbose:    bool = MATCHES.is_present("VERBOSE");
   let showheader: bool =!MATCHES.is_present("NOHEADER");
   let from_file:  bool = MATCHES.is_present("FILENAME");
   let mut wait:   u64  = MATCHES.value_of  ("TIMEOUT").unwrap().parse::<u64>().unwrap_or(4000);
@@ -266,12 +290,12 @@ async fn main() {  // -> io::Result<()> {
   let timeout = Duration::new(seconds, nanoseconds);
   // let ports: Vec<String>     = MATCHES.values_of("PORT").unwrap().map(|s| s.to_string()).collect();
   let ports: Vec<&str>     = MATCHES.values_of("PORT").unwrap().collect();
-  let nsAddress: Vec<&'static str> = if MATCHES.is_present("NAMESERVER") {
+  let nsAddress: Vec<&str> = if MATCHES.is_present("NAMESERVER") {
     MATCHES.values_of("NAMESERVER").unwrap().collect()
   } else if &dnsDefaultServers.len() > &0 {
     dnsDefaultServers
   } else {
-    vec!["103.86.99.99", "103.86.96.96"]
+    DEFAULTDNSSERVERS.to_vec() // ["103.86.99.99", "103.86.96.96"]
   };
   // let nsAddress: Vec<String> = if MATCHES.is_present("NAMESERVER") {
   //   MATCHES.values_of("NAMESERVER").unwrap().map(|s| s.to_string()).collect()
@@ -280,13 +304,13 @@ async fn main() {  // -> io::Result<()> {
   // } else {
   //     get_dnsserver().iter().map(|s| s.to_string()).collect()
   // };
-  if verbose { for dnsServer in dnsDefaultServers { println!("{}", dnsServer); } }
+  if verbose { for dnsServer in &DEFAULTDNSSERVERS { println!("{}", dnsServer); } }
   let nsSocket: Vec<SocketAddr> =
   nsAddress.iter().filter_map(|ns| format!("{}:53", ns).parse::<SocketAddr>().ok()).collect();
   let dnsServers =
     nsSocket.iter().map(|ns| dnsclient::UpstreamServer::new(*ns)).collect();
   let dnsClient  = dnsclient::sync::DNSClient::new(dnsServers);
-  let mut hosts:Vec<String>  = Vec::with_capacity(128);
+  let mut hosts: Vec<String>  = Vec::with_capacity(128);
   let _range: Vec<String>    = parse_range(MATCHES.value_of("RANGE").unwrap_or("---"));
 
   if piped_input() || from_file {
@@ -326,9 +350,9 @@ async fn main() {  // -> io::Result<()> {
     println!("{:<15} {:<width$} {}", "IPAddress", "Host", port_names, width=hostwidth);
     //repetitive_print!("IPAddress", "Host", port_names, (hostwidth=20));
   }
-  for host in hosts {
+  for host in &hosts {
     let ipAddress  = match host.as_bytes()[0].is_ascii_digit() {
-      true  => String::from(&host),
+      true  => String::from(host),
       false => match dnsClient.query_a(&host) {
         Ok(ipaddr) if ipaddr.len() > 0 => {    // found at least 1 ip
           let ip = ipaddr[0].to_string();
@@ -363,13 +387,23 @@ async fn main() {  // -> io::Result<()> {
   // Ok(())
 }
 
+/*
+  read & write CSV, json?, xml??? 
+  hostname
+  ipaddress
+  ports number & boolean
+  original: commandline | fileline
+
+*/
+
 fn test_tcp_socket_address(address: &str, port: &str, timeout: Duration) -> bool {
   let socket_name = format!("{}:{}", address, port);
   let socket_addr = &socket_name.parse().expect("Unable to parse socket address");
+  println!("{}:{} {:?}", address, port, timeout);
   TcpStream::connect_timeout(socket_addr, timeout).is_ok()
 }
 
-fn _test_tcp_portlist(host: &String, name: &String, portlist: &Vec<String>, wait: Duration, hostwidth: usize) {
+fn _test_tcp_portlist(host: &'static String, name: &String, portlist: &Vec<String>, wait: Duration, hostwidth: usize) {
   let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
   for p in portlist.clone() {
     let h = host.clone();

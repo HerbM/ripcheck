@@ -1,6 +1,6 @@
 [package]
 name    = "rpcheck"
-version = "0.0.4" # All? PortCheck features working, needs work but usuable
+version = "0.0.3"
 authors = ["HerbM <HerbMartin@GMail.com>"]
 description = "Fast TCP Port Checker in Rust"
 edition = "2018"
@@ -8,20 +8,23 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-libc = "0.2"  
-clap = "3.0.0-beta.1"
+# pico-args = "0.3.3"
+libc = "0.2"
+clap = { version = "3.0.0-beta.2", git = "https://github.com/clap-rs/clap" }
 cfile = "0.5.1"
 # domain-resolv = { git = "https://github.com/NLnetLabs/domain" }
 resolve = "*"
 ipconfig = "*"
+ipnet = "*"
 lazy_static = "*"
 regex = "*"
 dnsclient = { git = "https://github.com/jedisct1/rust-dnsclient" }
-ipnet = "2.3.*"
-# prettytable-rs = "^0.8"
+prettytable-rs = "0.8.*"
 
-# tokio = { version = "*", features = ["full", "tracing", "time"] }
-# rand = "*"
-# futures = { version = "0.3.*"}
-# log = "0.4.*"
-# env_logger = "0.7.*"
+tokio = { version = "*", features = ["full", "tracing", "time"] }
+rand = "*"
+futures = { version = "0.3.*"}
+log = "0.4.*"
+env_logger = "0.7.*"
+
+# async_std = "*"

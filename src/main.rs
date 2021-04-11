@@ -42,24 +42,14 @@ use dnsclient::sync::*;
 ///     Fix DNS it's not timing out appropriately
 ///     Multi-thread DNS
 
-
 pub const STDIN_FILENO: i32 = 0;
 static DEFAULTDNSSERVERS: [&'static str; 2] = ["103.86.99.99", "103.86.96.96"];
 fn get_dnsserver() -> [&'static str; 2] { DEFAULTDNSSERVERS }
-
 fn piped_input() -> bool { unsafe { libc::isatty(STDIN_FILENO as i32) == 0 } }
 
-
-// fn parse_range(range: &str) -> Vec<String> {
-//   // let mut v = Vec::new();
-//   let rs: Vec<String> = range.split('-').map(|ip| { ip.to_string()}).collect();
-//   rs
-//   //for r in rs {
-// }
-
-
 /* TODO:
-// https://docs.rs/ipnet/2.3.0/ipnet/enum.IpNet.html 
+/// https://docs.rs/ipnet/2.3.0/ipnet/struct.Ipv4AddrRange.html 
+/// https://docs.rs/ipnet/2.3.0/ipnet/enum.IpNet.html 
 let net: IpNet = "10.0.0.0/30".parse().unwrap();
 assert_eq!(net.hosts().collect::<Vec<IpAddr>>(), vec![
     "10.0.0.1".parse::<IpAddr>().unwrap(),
@@ -74,7 +64,6 @@ assert_eq!(net.hosts().collect::<Vec<IpAddr>>(), vec![
     "fd00::3".parse().unwrap(),
 ]);
 
-// https://docs.rs/ipnet/2.3.0/ipnet/struct.Ipv4AddrRange.html 
 */
 
 fn valid_port(portname: &str) -> Result<(), String> {
@@ -121,6 +110,7 @@ fn valid_range(range: &str) -> Result<(), String> {   // TODO regex wrong: techn
 
 fn parse_args() -> clap::ArgMatches {
   #[cfg(windows)]
+  println!("{:?}", std::env::args());
   const DEFAULTPORT: &str = "135";
   #[cfg(not(windows))]
   const DEFAULTPORT: &str = "22";
@@ -201,7 +191,6 @@ fn _ipv4Addr_to_u32(ipaddress: Ipv4Addr) -> u32 {
   ipaddress.octets().iter().fold(0,|acc, oct| acc << 8 + *oct as u32)
 }
 
-lazy_static!{static ref MATCHES: clap::ArgMatches = parse_args();}
 
 #[derive(Debug)]
 enum OutputType {
@@ -263,6 +252,7 @@ fn get_timeout(wait: u64) -> Duration {
   Duration::new(seconds, nanoseconds)
 }
 
+lazy_static!{static ref MATCHES: clap::ArgMatches = parse_args();}
 fn hostname_to_ipaddress(hostname: &str) -> std::vec::IntoIter<std::net::SocketAddr> {
   // let empty = Vec::new().into_iter();
   // (format!("{}:0", hostname)).to_socket_addrs().unwrap()  /// .or_else(empty)
@@ -274,6 +264,7 @@ fn hostname_to_ipaddress(hostname: &str) -> std::vec::IntoIter<std::net::SocketA
 
 // lazy_static!{static ref DEFAULTDNSSERVERS:Vec<&'static str> = getDefaultDNSServers();}
 fn main() -> io::Result<()> {
+  // let MATCHES: clap::ArgMatches = parse_args();
   let target = Target{..Default::default() };
   let config = CheckConfig{..Default::default() };
   if false {
@@ -315,17 +306,18 @@ fn main() -> io::Result<()> {
   let dnsServers =
     nsSocket.iter().map(|ns| dnsclient::UpstreamServer::new(*ns)).collect();
   let dnsClient: DNSClient  = dnsclient::sync::DNSClient::new(dnsServers);
-  let mut hosts:Vec<String> = Vec::with_capacity(128);
+  let mut hosts:Vec<String> = Vec::with_capacity(128);  // OK? Seems reasonable
   
   // TODO -------------------------------------------------------- 
-  
+  if MATCHES.is_present("HOST") {              // TODO Make sure no weirdness in the fixed section below
+    hosts.extend( MATCHES.values_of("HOST").unwrap().map(|s| s.to_string()));
+  }
   // WORKING: Fix range not printing
   if MATCHES.is_present("RANGE") {
     println!("Line:{} {}", line!(), "MATCHES.is_present(\"RANGE\")" );
     let ranges: Vec<String>   = MATCHES.values_of("RANGE").unwrap().map(|s| s.to_string()).collect();
     // FIXME With NO range panics: 'called `Option::unwrap()` on a `None` value', src\main.rs:330:58
     if verbose { println!("ranges: {:?}", ranges); }
-    let mut rangeHosts: Vec<String> = Vec::with_capacity(16);
     for r in ranges {
       let bounds: Vec<String> = parse_range(&r);
       if bounds.len() == 2 {
@@ -333,7 +325,7 @@ fn main() -> io::Result<()> {
         let end:   &String = bounds.get(1).unwrap();
         if verbose { println!("range bounds: [{:?}] [{:?}] [{:?}] [{:?}]", r, bounds, start, end); }
         let range_hosts: Vec<String> = Ipv4AddrRange::new(
-          start.parse().unwrap(),
+          start.parse().unwrap(),  // ToDo: What happens if it doesn't Parse?
           end.parse().unwrap(),
         ).map(|ip| format!("{:?}", ip)).collect();
         hosts.extend(range_hosts);
@@ -347,30 +339,28 @@ fn main() -> io::Result<()> {
   // -------------------------------------------------------- 
   
   // TODO review next session to ensure we allow all reasonable combinations of host entry
-  if piped_input() || from_file {
+  // if piped_input() || from_file {
     //let input: io::BufReader<_>;
     // https://doc.rust-lang.org/std/io/trait.BufRead.html
-    if piped_input() {   // TODO works but only accepts host list, what if structured or CSV etc.???
-      let input = io::stdin();
-      let input = input.lock();
-      for line in input.lines() {   // TODO: Filter on Ok() and extend???
-        if let Ok(ip) = line { hosts.push(ip) }  // TODO: add warning or error handling???
-      }
+  if piped_input() {   // TODO works but only accepts host list, what if structured or CSV etc.???
+    let input = io::stdin();
+    let input = input.lock();
+    for line in input.lines() {   // TODO: Filter on Ok() and extend???
+      if let Ok(ip) = line { hosts.push(ip) }  // TODO: add warning or error handling???
     }
-    // TODO Allow both of these once ranges are fixed
-    if from_file {      // TODO works but only accepts host list, what if structured or CSV etc.??? 
-      let filename = MATCHES.value_of("FILENAME").unwrap();
-      let input = open_bufreader(filename);
-      if let Ok(input) = input {
-        for line in input.lines() {
-          if let Ok(ip) = line { hosts.push(ip) }
-        }
-      }
-    }
-  } 
-  if MATCHES.is_present("HOST") {              // TODO Make sure no weirdness in the fixed section below
-    hosts.extend( MATCHES.values_of("HOST").unwrap().map(|s| s.to_string()));
   }
+  // TODO Allow both of these once ranges are fixed
+  if from_file {      // TODO works but only accepts host list, what if structured or CSV etc.??? 
+    let filename = MATCHES.value_of("FILENAME").unwrap();
+    let input = open_bufreader(filename);
+    if let Ok(input) = input {
+      for line in input.lines() {
+        if let Ok(ip) = line { hosts.push(ip) }
+      }
+    }
+  }
+//  } 
+
   let mut hostwidth = 20;
   for h in hosts.iter() {
     if h.len() > hostwidth { hostwidth = h.len() }

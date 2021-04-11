@@ -1,45 +1,13 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'rpcheck'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=rpcheck",
-                    "--package=rpcheck"
-                ],
-                "filter": {
-                    "name": "rpcheck",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'rpcheck'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=rpcheck",
-                    "--package=rpcheck"
-                ],
-                "filter": {
-                    "name": "rpcheck",
-                    "kind": "bin"
-                }
-            },
-            "args": [ ],
-            "cwd": "${workspaceFolder}"
-        }
-    ]
+  "configurations": [
+    {
+      "name": "rpcheck",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/target/release/rpcheck.exe",
+      "args": ["-c", "192.168.239.1", "-r", "192.168.239.2-192.168.239.14", "-p", "135", "445", "3389", "-f", "hostlist.txt", "-t", "4", "-l"
+      // "args": ["-c", "192.168.239.1", "-p", "135", "445", "3389", "-f", "hostlist.txt", "-t", "4", "-l"
+      ],
+    }    
+  ]
 }

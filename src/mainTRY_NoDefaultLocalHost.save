@@ -124,13 +124,13 @@ fn parse_args() -> clap::ArgMatches {
   const DEFAULTPORT: &str = "135";
   #[cfg(not(windows))]
   const DEFAULTPORT: &str = "22";
-  const _LOCALHOST: &str  = "127.0.0.1";  // TODO: Fix or remove eventually, maybe static
+  const LOCALHOST: &str  = "127.0.0.1";
   const WAIT:&str = "4000";
   clap_app!(myapp =>
     (version : crate_version!())
     (author  : crate_authors!("\n"))
-    (about   : crate_description!() )                    // FIXME default_value(LOCALHOST)    
-    (@arg HOST:    -a -c --host {valid_hostname} ... +takes_value                            "Computers to test" )
+    (about   : crate_description!() )
+    (@arg HOST:    -a -c --host {valid_hostname} ... +takes_value default_value(LOCALHOST)   "Computers to test" )
     (@arg PORT:       -p --port {valid_port}     ... +takes_value default_value(DEFAULTPORT) "Ports to test"     )
     (@arg TIMEOUT: -w -t --timeout    --wait         +takes_value default_value(WAIT)        "Timeout: seconds or milliseconds")
     (@arg FILENAME:   -f --filename   --path         +takes_value                            "Read targets from file(s)")
@@ -319,11 +319,9 @@ fn main() -> io::Result<()> {
   
   // TODO -------------------------------------------------------- 
   
-  // WORKING: Fix range not printing
   if MATCHES.is_present("RANGE") {
-    println!("Line:{} {}", line!(), "MATCHES.is_present(\"RANGE\")" );
     let ranges: Vec<String>   = MATCHES.values_of("RANGE").unwrap().map(|s| s.to_string()).collect();
-    // FIXME With NO range panics: 'called `Option::unwrap()` on a `None` value', src\main.rs:330:58
+      // FIXME With NO range panics: 'called `Option::unwrap()` on a `None` value', src\main.rs:330:58
     if verbose { println!("ranges: {:?}", ranges); }
     let mut rangeHosts: Vec<String> = Vec::with_capacity(16);
     for r in ranges {
@@ -336,16 +334,14 @@ fn main() -> io::Result<()> {
           start.parse().unwrap(),
           end.parse().unwrap(),
         ).map(|ip| format!("{:?}", ip)).collect();
-        hosts.extend(range_hosts);
+        rangeHosts.extend(range_hosts);
       }
     }    
-    //hosts.extend(rangeHosts.iter());
-    // println!("Line:{} {}", line!(), "1" );
-    // if true || verbose { println!("rangeHosts: {:?}", rangeHosts); }
+    if verbose { println!("rangeHosts: {:?}", rangeHosts); }
   }
   
   // -------------------------------------------------------- 
-  
+
   // TODO review next session to ensure we allow all reasonable combinations of host entry
   if piped_input() || from_file {
     //let input: io::BufReader<_>;
@@ -353,11 +349,10 @@ fn main() -> io::Result<()> {
     if piped_input() {   // TODO works but only accepts host list, what if structured or CSV etc.???
       let input = io::stdin();
       let input = input.lock();
-      for line in input.lines() {   // TODO: Filter on Ok() and extend???
+      for line in input.lines() {
         if let Ok(ip) = line { hosts.push(ip) }  // TODO: add warning or error handling???
       }
     }
-    // TODO Allow both of these once ranges are fixed
     if from_file {      // TODO works but only accepts host list, what if structured or CSV etc.??? 
       let filename = MATCHES.value_of("FILENAME").unwrap();
       let input = open_bufreader(filename);
@@ -367,9 +362,11 @@ fn main() -> io::Result<()> {
         }
       }
     }
-  } 
-  if MATCHES.is_present("HOST") {              // TODO Make sure no weirdness in the fixed section below
-    hosts.extend( MATCHES.values_of("HOST").unwrap().map(|s| s.to_string()));
+  } else {              // TODO Make sure no weirdness in the fixed section below
+    hosts = MATCHES.values_of("HOST").unwrap().map(|s| s.to_string()).collect();
+    // for rip in rangeHosts {  // TODO remove this once it's confirmed
+    //   hosts.push(rip);
+    // }
   }
   let mut hostwidth = 20;
   for h in hosts.iter() {

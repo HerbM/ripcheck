@@ -42,6 +42,20 @@ use dnsclient::sync::*;
 ///     Fix DNS it's not timing out appropriately
 ///     Multi-thread DNS
 
+/* DONE: 
+config
+  read the hosts
+    queue hosts for conversion
+  convert the hosts  -- when finished we'll know maxwidth
+    queue hosts for testing
+  test host
+    test ports
+    queue results for output
+  output results     -- can't start until maxwidth is ready
+finish
+
+*/
+
 pub const STDIN_FILENO: i32 = 0;
 static DEFAULTDNSSERVERS: [&'static str; 2] = ["103.86.99.99", "103.86.96.96"];
 fn get_dnsserver() -> [&'static str; 2] { DEFAULTDNSSERVERS }
@@ -138,27 +152,12 @@ where P: AsRef<Path>, {
   Ok(io::BufReader::new(file))
 }
 
-/*
-config
-  read the hosts
-    queue hosts for conversion
-  convert the hosts  -- when finished we'll know maxwidth
-    queue hosts for testing
-  test host
-    test ports
-    queue results for output
-  output results     -- can't start until maxwidth is ready
-finish
-
-*/
-
 // lazy_static!{
 //   static ref dns4servers:  = std::process::Command::new("netsh.exe")
 //                         .args(&["interface", "ipv4", "show","dns"])
 //                         .output()
 //                         .expect("failed to execute process");
 // }
-
 
 // Get DNS Server on Windows
 // (netsh inter ip show dns *>&1 | sls "(configured.*|^\s+)\d+") -replace '^(.*:)?\s+([\d.]+$)','$2'
@@ -209,6 +208,7 @@ struct CheckConfig {
   verbose:    bool,
   showheader: bool,
 }
+
 impl Default for CheckConfig {
   fn default() -> CheckConfig {
     CheckConfig {
@@ -342,6 +342,9 @@ fn main() -> io::Result<()> {
   // if piped_input() || from_file {
     //let input: io::BufReader<_>;
     // https://doc.rust-lang.org/std/io/trait.BufRead.html
+  
+  
+  //  WORK on threading file read
   if piped_input() {   // TODO works but only accepts host list, what if structured or CSV etc.???
     let input = io::stdin();
     let input = input.lock();
@@ -349,6 +352,26 @@ fn main() -> io::Result<()> {
       if let Ok(ip) = line { hosts.push(ip) }  // TODO: add warning or error handling???
     }
   }
+  // NEW FILE VERSION
+  /*
+  let mut threads: Vec<std::thread::JoinHandle<Vec<String>> = vec![];
+  if from_file {      // TODO works but only accepts host list, what if structured or CSV etc.??? 
+    let filename = MATCHES.value_of("FILENAME").unwrap();
+    threads.push(std::thread::spawn(move || {
+      let hostVec: Vec<String> = Vec<String>::with_capacity(1024);
+      let input = open_bufreader(filename);
+      if let Ok(input) = input {
+        for line in input.lines() {
+          if let Ok(ip) = line { hostVec.push(ip) }
+        }
+      }
+    }));
+  }
+  */
+  
+  // if (files = files(&args);
+  // FilesParallel) { files_parallel(&args); }
+
   // TODO Allow both of these once ranges are fixed
   if from_file {      // TODO works but only accepts host list, what if structured or CSV etc.??? 
     let filename = MATCHES.value_of("FILENAME").unwrap();
@@ -444,3 +467,86 @@ fn test_tcp_portlist(address: &str, name: &str, ports: &Vec<String>,
   println!("{:<15} {:<width$} {}", address, name, result.join("\t"), width=hostwidth);
 }
 
+/* 
+/// The top-level entry point for listing files without searching them. This
+/// recursively steps through the file list (current directory by default) and
+/// prints each path sequentially using a single thread.
+fn files(args: &Args) -> Result<bool> {
+  let quit_after_match = args.quit_after_match()?;
+  let subject_builder = args.subject_builder();
+  let mut matched = false;
+  let mut path_printer = args.path_printer(args.stdout())?;
+  for result in args.walker()? {
+    let subject = match subject_builder.build_from_result(result) {
+      Some(subject) => subject,
+      None => continue,
+      };
+      matched = true;
+      if quit_after_match {
+        break;
+      }
+      if let Err(err) = path_printer.write_path(subject.path()) {
+        if err.kind() == io::ErrorKind::BrokenPipe {
+          break;               // A broken pipe means graceful termination.
+          }
+          // some other error prevents writing to stdout, propogate it
+          return Err(err.into());
+        }
+      }
+  Ok(matched)
+}
+
+/// The top-level entry point for listing files without searching them. This
+/// recursively steps through the file list (current directory by default) and
+/// prints each path sequentially using multiple threads.
+fn files_parallel(args: &Args) -> Result<bool> {
+  use std::sync::atomic::AtomicBool;
+  use std::sync::atomic::Ordering::SeqCst;
+  use std::sync::mpsc;
+  use std::thread;
+  
+  let quit_after_match = args.quit_after_match()?;
+  let subject_builder = args.subject_builder();
+  let mut path_printer = args.path_printer(args.stdout())?;
+  let matched = AtomicBool::new(false);
+  let (tx, rx) = mpsc::channel::<Subject>();
+
+  let print_thread = thread::spawn(move || -> io::Result<()> {
+    for subject in rx.iter() {
+      path_printer.write_path(subject.path())?;
+    }
+      Ok(())
+    });
+    args.walker_parallel()?.run(|| {
+      let subject_builder = &subject_builder;
+      let matched = &matched;
+      let tx = tx.clone();
+      
+      Box::new(move |result| {
+        let subject = match subject_builder.build_from_result(result) {
+          Some(subject) => subject,
+          None => return WalkState::Continue,
+        };
+        matched.store(true, SeqCst);
+        if quit_after_match {
+          WalkState::Quit
+        } else {
+          match tx.send(subject) {
+            Ok(_) => WalkState::Continue,
+            Err(_) => WalkState::Quit,
+              }
+            }
+          })
+        });
+        drop(tx);
+        if let Err(err) = print_thread.join().unwrap() {
+          // A broken pipe means graceful termination, so fall through.
+      // Otherwise, something bad happened while writing to stdout, so bubble
+      // it up.
+      if err.kind() != io::ErrorKind::BrokenPipe {
+        return Err(err.into());
+      }
+    }
+  Ok(matched.load(SeqCst))
+}
+*/

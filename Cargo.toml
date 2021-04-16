@@ -1,5 +1,5 @@
 [package]
-name    = "rpcheck"
+name    = "ripcheck"
 version = "0.0.5" # All? PortCheck features working, needs work but usuable
 authors = ["HerbM <HerbMartin@GMail.com>"]
 description = "Fast TCP Port Checker in Rust"

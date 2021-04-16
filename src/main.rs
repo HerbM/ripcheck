@@ -235,13 +235,14 @@ fn parse_args() -> clap::ArgMatches {
   const DEFAULTPORT: &str = "22";
   const _LOCALHOST: &str  = "127.0.0.1";  // TODO: Fix or remove eventually, maybe static
   const WAIT:&str = "4000";
-  clap_app!(myapp =>
+  clap_app!(ripcheck =>
     (version : crate_version!())
     (author  : crate_authors!("\n"))
     (about   : crate_description!() )                    // FIXME default_value(LOCALHOST)    
     // (@arg first: "first" )
     //(@arg TARGETS: "Computers to test" )
-    (@arg HOST:    -e -a --host  {valid_hostname} ... +takes_value                          "Query name or address" )
+    (@arg TARGETS:                                ...                                          "Query targets")
+    (@arg HOST:    -e -a --host  {valid_hostname} ... +takes_value                             "Query name or address" )
     (@arg RANGE:      -r --range {valid_range}    ... +takes_value                             "Query Address range"   )
     (@arg CIDR:    --net --cidr  {valid_cidr}     ... +takes_value                             "Query network range"   )
     (@arg FILENAME:   -f --filename    --path         +takes_value                             "Read targets from file(s)")
@@ -271,7 +272,6 @@ fn main() -> io::Result<()> {
   let out = format!("{:?}", out);
   let separator = Regex::new(r"[^.\d]|[\r\n]+").unwrap();
   let dnsDefaultServers: Vec<_> = separator.split(&out).into_iter().filter(|s| s.len() > 6).collect();
-  // let targs = MATCHES.is_present(first);
   let verbose:     bool = MATCHES.is_present("VERBOSE" );
   let showheader:  bool =!MATCHES.is_present("NOHEADER");
   let from_file:   bool = MATCHES.is_present("FILENAME");
@@ -283,11 +283,11 @@ fn main() -> io::Result<()> {
         let mut range = Vec::with_capacity(2);
         for p in SPLIT_PORTS.splitn(ports, 2) {
            range.push(p.parse::<u16>().unwrap());
-        }
-        if range.len() == 1 {
-          range.push(range[0]);
-        }
-        let mut portrange = Vec::with_capacity(1024);
+          }
+          if range.len() == 1 {
+            range.push(range[0]);
+          }
+          let mut portrange = Vec::with_capacity(1024);
         if range.len() == 2 {
           for pn in range[0]..(range[1] + 1) {
             portrange.push(format!("{}", pn));
@@ -296,8 +296,8 @@ fn main() -> io::Result<()> {
         portrange.into_iter()
       }
     ).map(|ports| ports.to_string()).collect();
-  if verbose {
-    let testAddress = 
+    if verbose {
+      let testAddress = 
       hostname_to_ipaddress("hamachi").filter(|a| a.is_ipv4());
     for ip in testAddress {
       println!("SocketAddr: {}", ip); 
@@ -309,9 +309,9 @@ fn main() -> io::Result<()> {
   let nsAddress: Vec<String> = if MATCHES.is_present("NAMESERVER") {
     MATCHES.values_of("NAMESERVER").unwrap().map(|s| s.to_string()).collect()
   } else if &dnsDefaultServers.len() > &0 {
-      dnsDefaultServers.iter().map(|s| s.to_string()).collect()
+    dnsDefaultServers.iter().map(|s| s.to_string()).collect()
   } else {
-      get_dnsserver().iter().map(|s| s.to_string()).collect()
+    get_dnsserver().iter().map(|s| s.to_string()).collect()
   };
   if verbose { for dnsServer in dnsDefaultServers { println!("{}", dnsServer); } }
   let nsSocket: Vec<SocketAddr> =
@@ -322,6 +322,10 @@ fn main() -> io::Result<()> {
   let mut hosts:Vec<String> = Vec::with_capacity(128);  // OK? Seems reasonable
   
   // TODO -------------------------------------------------------- 
+  if MATCHES.is_present("TARGETS") {
+    hosts.extend( MATCHES.values_of("TARGETS").unwrap().map(|s| s.to_string()));
+  }
+
   if MATCHES.is_present("HOST") {              // TODO Make sure no weirdness in the fixed section below
     hosts.extend( MATCHES.values_of("HOST").unwrap().map(|s| s.to_string()));
   }
@@ -333,27 +337,27 @@ fn main() -> io::Result<()> {
   }
   // FIXME With NO range panics: 'called `Option::unwrap()` on a `None` value', src\main.rs:330:58
   if verbose { println!("ranges: {:?}", ranges); }
-    for r in ranges {
-      let bounds: Vec<String> = parse_range(&r);
-      if bounds.len() == 2 {
-        let start: &String = bounds.get(0).unwrap(); // TODO: fix by adding error handling
-        let end:   &String = bounds.get(1).unwrap();
-        if verbose { println!("range bounds: [{:?}] [{:?}] [{:?}] [{:?}]", r, bounds, start, end); }
-        let range_hosts: Vec<String> = Ipv4AddrRange::new(
-          start.parse().unwrap(),  // ToDo: What happens if it doesn't Parse?
-          end.parse().unwrap(),
-        ).map(|ip| format!("{:?}", ip)).collect();
-        hosts.extend(range_hosts);
-      }
-    }    
-    if MATCHES.is_present("CIDR") {
-      for h in MATCHES.values_of("CIDR").unwrap() {
-        let cidrhosts = get_nethosts(h).unwrap().map(|h| h.to_string());
-        if verbose { println!("{:#?}", cidrhosts); }
-        hosts.extend(cidrhosts);
-      }
-    }  
-    if MATCHES.is_present("RANGE") {
+  for r in ranges {
+    let bounds: Vec<String> = parse_range(&r);
+    if bounds.len() == 2 {
+      let start: &String = bounds.get(0).unwrap(); // TODO: fix by adding error handling
+      let end:   &String = bounds.get(1).unwrap();
+      if verbose { println!("range bounds: [{:?}] [{:?}] [{:?}] [{:?}]", r, bounds, start, end); }
+      let range_hosts: Vec<String> = Ipv4AddrRange::new(
+        start.parse().unwrap(),  // ToDo: What happens if it doesn't Parse?
+        end.parse().unwrap(),
+      ).map(|ip| format!("{:?}", ip)).collect();
+      hosts.extend(range_hosts);
+    }
+  }    
+  if MATCHES.is_present("CIDR") {
+    for h in MATCHES.values_of("CIDR").unwrap() {
+      let cidrhosts = get_nethosts(h).unwrap().map(|h| h.to_string());
+      if verbose { println!("{:#?}", cidrhosts); }
+      hosts.extend(cidrhosts);
+    }
+  }  
+  if MATCHES.is_present("RANGE") {
     //hosts.extend(rangeHosts.iter());
     // println!("Line:{} {}", line!(), "1" );
     // if true || verbose { println!("rangeHosts: {:?}", rangeHosts); }

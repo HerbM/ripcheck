@@ -65,8 +65,8 @@ fn get_dnsserver() -> [&'static str; 2] { DEFAULTDNSSERVERS }
 fn piped_input() -> bool { unsafe { libc::isatty(STDIN_FILENO as i32) == 0 } }
 
 /* TODO:
-/// https://docs.rs/ipnet/2.3.0/ipnet/struct.Ipv4AddrRange.html 
-/// https://docs.rs/ipnet/2.3.0/ipnet/enum.IpNet.html 
+/// https://docs.rs/ipnet/2.3.0/ipnet/struct.Ipv4AddrRange.html
+/// https://docs.rs/ipnet/2.3.0/ipnet/enum.IpNet.html
 let net: IpNet = "10.0.0.0/30".parse().unwrap();  # Asserts in notes_main
 let net: IpNet = "fd00::/126".parse().unwrap();
 */
@@ -91,7 +91,7 @@ fn valid_port(portname: &str) -> Result<(), String> {
     match port.parse::<u16>().unwrap_or(0) {
       p if p != 0 => (),
       _ => return Err(String::from(format!("Port value <{}> from arg <portname> is invalid.", portname)))
-    } 
+    }
   }
   Ok(())
 }
@@ -129,7 +129,7 @@ fn valid_range(range: &str) -> Result<(), String> {   // TODO regex wrong: techn
     false => Err("IP Range is invalid".to_string()),
   }
 }
-fn valid_cidr(cidr: &str) -> Result<(), String> { 
+fn valid_cidr(cidr: &str) -> Result<(), String> {
   match cidr.len() > 0 {
     true  => Ok(()),
     false => Err("IP Net is invalid".to_string()),
@@ -165,24 +165,24 @@ enum OutputType {
   _XML,
 }
 #[derive(Debug)]
-struct CheckConfig {
+struct CheckConfig<'a> {
   useDNSdirect: bool,
   timeout: Duration,
   outputType: OutputType,
-  dnsserverlist: Vec<String>,
-  testports:  Vec<String>,
+  dnsserverlist: Vec<&'a str>,
+  testports:  Vec<&'a str>,
   verbose:    bool,
   showheader: bool,
 }
 
-impl Default for CheckConfig {
-  fn default() -> CheckConfig {
+impl<'a> Default for CheckConfig<'a> {
+  fn default() -> CheckConfig<'a> {
     CheckConfig {
       useDNSdirect:  false,
       timeout:       Duration::new(3, 0),
       outputType:    OutputType::Table,
       dnsserverlist: vec![],
-      testports:     vec!["80".to_string(), "135".to_string(),"445".to_string()],
+      testports:     vec!["80", "135","445"],  //    .to_string()
       verbose:       false,
       showheader:    true,
     }
@@ -238,13 +238,11 @@ fn parse_args() -> clap::ArgMatches {
   clap_app!(ripcheck =>
     (version : crate_version!())
     (author  : crate_authors!("\n"))
-    (about   : crate_description!() )                    // FIXME default_value(LOCALHOST)    
-    // (@arg first: "first" )
-    //(@arg TARGETS: "Computers to test" )
+    (about   : crate_description!() )                    // FIXME default_value(LOCALHOST)
     (@arg TARGETS:                                ...                                          "Query targets")
-    (@arg HOST:    -e -a --host  {valid_hostname} ... +takes_value                             "Query name or address" )
-    (@arg RANGE:      -r --range {valid_range}    ... +takes_value                             "Query Address range"   )
-    (@arg CIDR:    --net --cidr  {valid_cidr}     ... +takes_value                             "Query network range"   )
+    (@arg HOST:    -e -a --host  {valid_hostname} ... +takes_value                             "Query names or addresses" )
+    (@arg RANGE:      -r --range {valid_range}    ... +takes_value                             "Query Addresse ranges"   )
+    (@arg CIDR:    --net --cidr  {valid_cidr}     ... +takes_value                             "Query network ranges"   )
     (@arg FILENAME:   -f --filename    --path         +takes_value                             "Read targets from file(s)")
     (@arg PORT:       -p --port  {valid_port}     ... +takes_value default_value(DEFAULTPORT)  "Ports to test"            )
     (@arg TIMEOUT: -w -t --timeout     --wait         +takes_value default_value(WAIT)         "Timeout: seconds or milliseconds")
@@ -260,15 +258,9 @@ lazy_static!{static ref MATCHES: clap::ArgMatches = parse_args();}
 // lazy_static!{static ref DEFAULTDNSSERVERS:Vec<&'static str> = getDefaultDNSServers();}
 fn main() -> io::Result<()> {
   // let MATCHES: clap::ArgMatches = parse_args();
-  let target = Target{..Default::default() };
-  let config = CheckConfig{..Default::default() };
-  if false {
-    println!("default target: {:#?}", target);
-    println!("default config: {:#?}", config);
-  }  
   let out = std::process::Command::new("netsh.exe")
-                      .args(&["interface", "ipv4", "show","dns"])
-                      .output().expect("Couldn't run netsh");
+                    .args(&["interface", "ipv4", "show","dns"])
+                    .output().expect("Couldn't run netsh");
   let out = format!("{:?}", out);
   let separator = Regex::new(r"[^.\d]|[\r\n]+").unwrap();
   let dnsDefaultServers: Vec<_> = separator.split(&out).into_iter().filter(|s| s.len() > 6).collect();
@@ -278,50 +270,67 @@ fn main() -> io::Result<()> {
   let uselocalDNS: bool = MATCHES.is_present("LOCALDNS");
   let timeout: Duration = get_timeout(MATCHES.value_of ("TIMEOUT").unwrap().parse::<u64>().unwrap_or(4000));
   if verbose { println!("Duration: {:?}", timeout); }
-  let ports: Vec<String> = MATCHES.values_of("PORT").unwrap()
-    .flat_map(|ports| {
-        let mut range = Vec::with_capacity(2);
-        for p in SPLIT_PORTS.splitn(ports, 2) {
-           range.push(p.parse::<u16>().unwrap());
-          }
-          if range.len() == 1 {
-            range.push(range[0]);
-          }
-          let mut portrange = Vec::with_capacity(1024);
-        if range.len() == 2 {
-          for pn in range[0]..(range[1] + 1) {
-            portrange.push(format!("{}", pn));
-          }
+  let target = Target{..Default::default() };
+  let config = CheckConfig {
+    useDNSdirect:  false,
+    timeout:       timeout,
+    outputType:    OutputType::Table,
+    dnsserverlist: dnsDefaultServers,
+    testports:     vec!["80", "135","445"],
+    verbose:       verbose,
+    showheader:    showheader,
+  };
+  if true {
+    println!("default target: {:#?}", target);
+    println!("default config: {:#?}", config);
+  }
+  fn get_portnumbers(portarg:&str) -> Vec<String> {   //
+    let mut range = SPLIT_PORTS.splitn(portarg, 2);// {
+    let start: u32 = range.next().unwrap().parse().unwrap();
+    match range.next() {
+      None => vec![start.to_string()],  // return single value as Vec<u16>
+      Some(s) => {
+        let end: u32 = s.parse::<u32>().unwrap();  // u32, no overflow on MAXPORT
+        match start > end {                                           // count LO to HI
+          true  => (end..(start+1)).map(|p| p.to_string()).collect(),
+          false => (start..(end+1)).map(|p| p.to_string()).collect(),
         }
-        portrange.into_iter()
-      }
-    ).map(|ports| ports.to_string()).collect();
-    if verbose {
-      let testAddress = 
-      hostname_to_ipaddress("hamachi").filter(|a| a.is_ipv4());
+      },
+    }
+  }
+  fn get_portlist(matches: &MATCHES) -> Vec<String> {   //
+    matches.values_of("PORT")
+           .unwrap()
+           .flat_map(|portarg| get_portnumbers(&portarg))
+           .collect()   // get the u16 values
+  }
+  let ports: Vec<String> = get_portlist(&MATCHES);
+  if verbose {
+    let testAddress =
+    hostname_to_ipaddress("hamachi").filter(|a| a.is_ipv4());
     for ip in testAddress {
-      println!("SocketAddr: {}", ip); 
+      println!("SocketAddr: {}", ip);
     }
   }
   // INFO: https://lib.rs/crates/pnet
   // todo:  Fix DNS it's not timing out appropriately, and it is single threaded now
-  
+
   let nsAddress: Vec<String> = if MATCHES.is_present("NAMESERVER") {
     MATCHES.values_of("NAMESERVER").unwrap().map(|s| s.to_string()).collect()
-  } else if &dnsDefaultServers.len() > &0 {
-    dnsDefaultServers.iter().map(|s| s.to_string()).collect()
+  } else if config.dnsserverlist.len() > 0 {
+    config.dnsserverlist.iter().map(|s| s.to_string()).collect()
   } else {
     get_dnsserver().iter().map(|s| s.to_string()).collect()
   };
-  if verbose { for dnsServer in dnsDefaultServers { println!("{}", dnsServer); } }
+  if verbose { for dnsServer in config.dnsserverlist { println!("{}", dnsServer); } }
   let nsSocket: Vec<SocketAddr> =
     nsAddress.iter().filter_map(|ns| format!("{}:53", ns).parse::<SocketAddr>().ok()).collect();
   let dnsServers =
     nsSocket.iter().map(|ns| dnsclient::UpstreamServer::new(*ns)).collect();
   let dnsClient: DNSClient  = dnsclient::sync::DNSClient::new(dnsServers);
   let mut hosts:Vec<String> = Vec::with_capacity(128);  // OK? Seems reasonable
-  
-  // TODO -------------------------------------------------------- 
+
+  // TODO --------------------------------------------------------
   if MATCHES.is_present("TARGETS") {
     hosts.extend( MATCHES.values_of("TARGETS").unwrap().map(|s| s.to_string()));
   }
@@ -332,7 +341,7 @@ fn main() -> io::Result<()> {
   // WORKING: Fix range not printing
   if verbose { println!("Line:{} {}", line!(), "MATCHES.is_present(\"RANGE\")" );}
   let mut ranges: Vec<String>   = vec![];
-  if MATCHES.is_present("RANGE") { 
+  if MATCHES.is_present("RANGE") {
     ranges.extend(MATCHES.values_of("RANGE").unwrap().map(|s| s.to_string()));
   }
   // FIXME With NO range panics: 'called `Option::unwrap()` on a `None` value', src\main.rs:330:58
@@ -349,28 +358,28 @@ fn main() -> io::Result<()> {
       ).map(|ip| format!("{:?}", ip)).collect();
       hosts.extend(range_hosts);
     }
-  }    
+  }
   if MATCHES.is_present("CIDR") {
     for h in MATCHES.values_of("CIDR").unwrap() {
       let cidrhosts = get_nethosts(h).unwrap().map(|h| h.to_string());
       if verbose { println!("{:#?}", cidrhosts); }
       hosts.extend(cidrhosts);
     }
-  }  
+  }
   if MATCHES.is_present("RANGE") {
     //hosts.extend(rangeHosts.iter());
     // println!("Line:{} {}", line!(), "1" );
     // if true || verbose { println!("rangeHosts: {:?}", rangeHosts); }
   }
-  
-  // -------------------------------------------------------- 
-  
+
+  // --------------------------------------------------------
+
   // TODO review next session to ensure we allow all reasonable combinations of host entry
   // if piped_input() || from_file {
     //let input: io::BufReader<_>;
     // https://doc.rust-lang.org/std/io/trait.BufRead.html
-  
-  
+
+
   //  WORK on threading file read
   if piped_input() {   // TODO works but only accepts host list, what if structured or CSV etc.???
     let input = io::stdin();
@@ -382,7 +391,7 @@ fn main() -> io::Result<()> {
   // NEW FILE VERSION
   /*
   let mut threads: Vec<std::thread::JoinHandle<Vec<String>> = vec![];
-  if from_file {      // TODO works but only accepts host list, what if structured or CSV etc.??? 
+  if from_file {      // TODO works but only accepts host list, what if structured or CSV etc.???
     let filename = MATCHES.value_of("FILENAME").unwrap();
     threads.push(std::thread::spawn(move || {
       let hostVec: Vec<String> = Vec<String>::with_capacity(1024);
@@ -395,12 +404,12 @@ fn main() -> io::Result<()> {
     }));
   }
   */
-  
+
   // if (files = files(&args);
   // FilesParallel) { files_parallel(&args); }
 
   // TODO Allow both of these once ranges are fixed
-  if from_file {      // TODO works but only accepts host list, what if structured or CSV etc.??? 
+  if from_file {      // TODO works but only accepts host list, what if structured or CSV etc.???
     let filename = MATCHES.value_of("FILENAME").unwrap();
     let input = open_bufreader(filename);
     if let Ok(input) = input {
@@ -409,7 +418,7 @@ fn main() -> io::Result<()> {
       }
     }
   }
-//  } 
+//  }
 
   let mut hostwidth = 20;
   for h in hosts.iter() {
@@ -418,12 +427,13 @@ fn main() -> io::Result<()> {
   let mut threads: Vec<std::thread::JoinHandle<()>> = Vec::new();
   let port_count = ports.len();
   let port_names = ports.join(" \tPort");
-  let all_fail   = vec!["false"; port_count].join("\t");
+  // let all_fail   = vec!["false"; port_count].join("\t"); // TODO: Add SomeOpen ???? column
 
-  if verbose { println!("port_count: {} {}", port_count, all_fail); }
+  if verbose { println!("port_count: {}", port_count); }
   if showheader {
     println!("{:<15} {:<width$} Port{}", "IPAddress", "Host", port_names, width=hostwidth);
   }
+
   for host in hosts {
     let ipAddress: String  = match host.as_bytes()[0].is_ascii_digit() {
       true  => String::from(&host),
@@ -433,7 +443,7 @@ fn main() -> io::Result<()> {
           if verbose { println!("ip: {} ipaddr.len {} {:?}", ip, ipaddr.len(), ipaddr)};
           String::from(ip)
         },
-        _ if uselocalDNS => {  
+        _ if uselocalDNS => {
           let hostVec: Vec<String> = hostname_to_ipaddress(&host)
           .filter(|a| a.is_ipv4())
           .map(|ip| ip.to_string()).collect();
@@ -441,22 +451,13 @@ fn main() -> io::Result<()> {
             Some(ip) => ip.to_string().replace(":0", "").replace("0.0.0.0", ""),
             _  => "".to_string(),
           }
-        },  
+        },
         _ => "".to_string(),
       }
     };
-    /* 
-    let hostVec: Vec<String> = hostname_to_ipaddress(&host)
-      .filter(|a| a.is_ipv4())
-      .map(|ip| ip.to_string()).collect();
-    let ipAddress: String  = match hostVec.get(0) {
-      Some(ip) => ip.to_string().replace(":0", "").replace("0.0.0.0", ""),
-      _        => "".to_string(),  //for sa4 in sa {
-    };
-    */
     if false  { println!("host: [{}]", host) };
     if ipAddress == "[]" {
-      println!("{:<15} {:<width$} {}", ipAddress, host, all_fail, width=hostwidth);
+      println!("{:<15} {:<width$}", ipAddress, host, width=hostwidth);
       continue;
     }
     let portlist = ports.clone();
@@ -471,109 +472,25 @@ fn main() -> io::Result<()> {
 fn test_tcp_socket_address(address: &str, port: &str, timeout: Duration) -> bool {
   let socket_name = format!("{}:{}", address, port);
   if false { println!("socket_name: [{}]", socket_name) };
-  // let socket_addr = &socket_name.parse().expect("Unable to parse socket address");
-  // TcpStream::connect_timeout(socket_addr, timeout).is_ok()
   match &socket_name.parse() {
     Ok(socket_addr)  => TcpStream::connect_timeout(socket_addr, timeout).is_ok(),
     _ => false
-  }  
+  }
 }
 
-fn test_tcp_portlist(address: &str, name: &str, ports: &Vec<String>, 
+fn test_tcp_portlist(address: &str, name: &str, ports: &Vec<String>,
                      timeout: Duration, hostwidth: usize) {
   let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
-  for port in ports.clone() {
+  for port in ports.iter() {
     let ip: String = address.to_string();
+    let port: String = port.to_string();
     threads.push(std::thread::spawn(move || -> bool { test_tcp_socket_address(&ip, &port, timeout)}));
   }
-  let results: Vec<bool> = 
+  let results: Vec<bool> =
     threads.into_iter()
            .map(|t| t.join().unwrap_or(false))
            .collect();
-  let result: Vec<String> = results.into_iter().map(|r| format!("{:?}", r)).collect();         
+  let result: Vec<String> = results.into_iter().map(|r| format!("{:?}", r)).collect();
   println!("{:<15} {:<width$} {}", address, name, result.join("\t"), width=hostwidth);
 }
 
-/* 
-/// The top-level entry point for listing files without searching them. This
-/// recursively steps through the file list (current directory by default) and
-/// prints each path sequentially using a single thread.
-fn files(args: &Args) -> Result<bool> {
-  let quit_after_match = args.quit_after_match()?;
-  let subject_builder = args.subject_builder();
-  let mut matched = false;
-  let mut path_printer = args.path_printer(args.stdout())?;
-  for result in args.walker()? {
-    let subject = match subject_builder.build_from_result(result) {
-      Some(subject) => subject,
-      None => continue,
-      };
-      matched = true;
-      if quit_after_match {
-        break;
-      }
-      if let Err(err) = path_printer.write_path(subject.path()) {
-        if err.kind() == io::ErrorKind::BrokenPipe {
-          break;               // A broken pipe means graceful termination.
-          }
-          // some other error prevents writing to stdout, propogate it
-          return Err(err.into());
-        }
-      }
-  Ok(matched)
-}
-
-/// The top-level entry point for listing files without searching them. This
-/// recursively steps through the file list (current directory by default) and
-/// prints each path sequentially using multiple threads.
-fn files_parallel(args: &Args) -> Result<bool> {
-  use std::sync::atomic::AtomicBool;
-  use std::sync::atomic::Ordering::SeqCst;
-  use std::sync::mpsc;
-  use std::thread;
-  
-  let quit_after_match = args.quit_after_match()?;
-  let subject_builder = args.subject_builder();
-  let mut path_printer = args.path_printer(args.stdout())?;
-  let matched = AtomicBool::new(false);
-  let (tx, rx) = mpsc::channel::<Subject>();
-
-  let print_thread = thread::spawn(move || -> io::Result<()> {
-    for subject in rx.iter() {
-      path_printer.write_path(subject.path())?;
-    }
-      Ok(())
-    });
-    args.walker_parallel()?.run(|| {
-      let subject_builder = &subject_builder;
-      let matched = &matched;
-      let tx = tx.clone();
-      
-      Box::new(move |result| {
-        let subject = match subject_builder.build_from_result(result) {
-          Some(subject) => subject,
-          None => return WalkState::Continue,
-        };
-        matched.store(true, SeqCst);
-        if quit_after_match {
-          WalkState::Quit
-        } else {
-          match tx.send(subject) {
-            Ok(_) => WalkState::Continue,
-            Err(_) => WalkState::Quit,
-              }
-            }
-          })
-        });
-        drop(tx);
-        if let Err(err) = print_thread.join().unwrap() {
-          // A broken pipe means graceful termination, so fall through.
-      // Otherwise, something bad happened while writing to stdout, so bubble
-      // it up.
-      if err.kind() != io::ErrorKind::BrokenPipe {
-        return Err(err.into());
-      }
-    }
-  Ok(matched.load(SeqCst))
-}
-*/

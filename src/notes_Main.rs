@@ -1,49 +1,4 @@
-/*
-  New structure plan
-  Work channel for tasks MPMC
-  Send "tasks"
-    NEW (or INPUT???)
-    PARSE?
-    RESOLVE1,2-RESOLVEALL
-    TEST
-    FORMAT
-  Output channel MPSC??
-    Single threaded output (at least to each sink, through screen & file could be separated)
-  
-  Create two channels Work & Output
-  Start threads that can RX & TX to these
-  Send initial tasks (of type following NEW)  
-  Start N threads based on MAX, DEFAULT, Size of input, CPU load?
-  Each task is picked up by any thread, work performed, and then calls "get_next_task(current_task)"
-  TEST is split into N threads (or async) to test each port/protocol
- 
-  INFO: https://lib.rs/crates/pnet
-        https://lib.rs/crates/backoff
-        https://lib.rs/crates/rustls-native-certs
-        https://lib.rs/crates/etherparse
-        https://lib.rs/crates/ipnetwork
-        https://lib.rs/crates/trust-dns-client
-        Schannel bindings for rust, allowing SSL/TLS (e.g. https) without openssl 
-          https://lib.rs/crates/schannel
-        https://lib.rs/crates/rsntp
-        https://publicsuffix.org/learn/
-        Robust and fast domain name parsing
-          https://lib.rs/crates/addr
-        tokio-tls An implementation of TLS/SSL streams for Tokio built on top of the [native-tls crate]
-          https://lib.rs/crates/tokio-native-tls
-        ipconfig Get network adapters information and network configuration for windows
-          https://lib.rs/crates/ipconfig
-        mdns A multicast DNS client library. Supports discovery of any mDNS device on a LAN
-        network-address-resolution-protocol
-          network is a set of Rust crates to make it easier to work with networking.
-          https://crates.io/crates/network-address-resolution-protocol
-        https://blog.dineshs91.com/post/send_arp/
-
-
-   
-*/
-
-/* DONE: 
+/* DONE:
 config
   read the hosts
     queue hosts for conversion
@@ -59,8 +14,8 @@ finish
 
 
 /* TODO:
-/// https://docs.rs/ipnet/2.3.0/ipnet/struct.Ipv4AddrRange.html 
-/// https://docs.rs/ipnet/2.3.0/ipnet/enum.IpNet.html 
+/// https://docs.rs/ipnet/2.3.0/ipnet/struct.Ipv4AddrRange.html
+/// https://docs.rs/ipnet/2.3.0/ipnet/enum.IpNet.html
 let net: IpNet = "10.0.0.0/30".parse().unwrap();
 assert_eq!(net.hosts().collect::<Vec<IpAddr>>(), vec![
     "10.0.0.1".parse::<IpAddr>().unwrap(),
@@ -75,6 +30,24 @@ assert_eq!(net.hosts().collect::<Vec<IpAddr>>(), vec![
     "fd00::3".parse().unwrap(),
 ]);
 
+  let mut hostwidth = 20;
+  for h in hosts.iter() {
+    if h.len() > hostwidth { hostwidth = h.len() }
+  };
+  let mut threads: Vec<std::thread::JoinHandle<()>> = Vec::new();
+  // let port_count = ports.len();
+  let port_names: String = ports.into_iter().map(|p| format!("Port{:<5}", p))
+    .collect::<Vec<String>>().join(" ");
+  // let all_fail   = vec!["false"; port_count].join("\t");
+  // let port_names = ports.join(" \tPort");
+  // let all_fail   = vec!["false"; port_count].join("\t");
+  if showheader {
+    println!("{:<15} {:<width$} {} SomeOpen", "IPAddress", "Host", port_names, width=hostwidth);
+  }
+
+
+$x = D:\Library\Rust\ipcheck\target\release\ripcheck.exe -a 192.168.239.10 --port 1-1023
+$x -replace '\s+',',' | ConvertFrom-CSV | findstr '192.168 true'
 
 */
 

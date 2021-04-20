@@ -20,18 +20,12 @@ use dnsclient::sync::*;
 // use std::process::Command;
 // use std::io::Command;
 
-//  TODO  Learn to do Git Merge etc.
-/// read from file is broken??? WOrked for me?
-/// should show help for bad input -- later
-/// fix alignment -- done, more testing
-/// multithreaded DNS fully -- needs restructering
-/// indexing -- easy
-/// fix command line parsing to make it easier - need decision
+/// TODO  Learn to do Git Merge etc.
 
 /// Working version with ranges, TODO:
-//  TODO  Review Panic with no range -- should be fixed, skipping RANGE if not present in ARGS
-//  FIXME IPv6 basic parsing and checking
-//  FIXME Find and fix error possibilities
+///   TODO  Review Panic with no range -- should be fixed, skipping RANGE if not present in ARGS
+///   FIXME IPv6 basic parsing and checking
+///   FIXME Find and fix error possibilities
 ///   Review section for combinations of command line, STDIN, and File input
 ///   Output CSV etc
 ///   Add Port RANGES EASY:::::
@@ -43,7 +37,6 @@ use dnsclient::sync::*;
 ///   Filtering options? Only with open ports?
 ///   Arp scan and network card manufacturers????
 ///     MAC Vendor list: https://gist.github.com/aallan/b4bb86db86079509e6159810ae9bd3e4
-
 ///   FQDN specific DNS server lists?
 ///   Congiguration files?  Or syntax in input files?
 ///   Read CSV and structured STDIN
@@ -71,7 +64,12 @@ static DEFAULTDNSSERVERS: [&'static str; 2] = ["103.86.99.99", "103.86.96.96"];
 fn get_dnsserver() -> [&'static str; 2] { DEFAULTDNSSERVERS }
 fn piped_input() -> bool { unsafe { libc::isatty(STDIN_FILENO as i32) == 0 } }
 
-
+/* TODO:
+/// https://docs.rs/ipnet/2.3.0/ipnet/struct.Ipv4AddrRange.html
+/// https://docs.rs/ipnet/2.3.0/ipnet/enum.IpNet.html
+let net: IpNet = "10.0.0.0/30".parse().unwrap();  # Asserts in notes_main
+let net: IpNet = "fd00::/126".parse().unwrap();
+*/
 fn get_nethosts(cidr_string: &str) -> Option<IpAddrRange> {
   let net:Result<IpNet,_> = cidr_string.parse();
   match net {
@@ -80,8 +78,12 @@ fn get_nethosts(cidr_string: &str) -> Option<IpAddrRange> {
   }
 }
 
-lazy_static!{static ref VALID_PORTS:  Regex = Regex::new(r"^(\d{1,5}(([-,;]\d{1,5})?))$").unwrap(); }
-lazy_static!{ static ref SPLIT_PORTS: Regex = Regex::new(r"[-,;]+").unwrap(); }
+lazy_static!{static ref VALID_PORTS: Regex = Regex::new(
+  r"^(\d{1,5}(([-,;]\d{1,5})?))$"
+).unwrap();}
+lazy_static!{static ref SPLIT_PORTS: Regex = Regex::new(
+  r"[-,;]+"
+).unwrap();}
 
 fn valid_port(portname: &str) -> Result<(), String> {
   for port in SPLIT_PORTS.split(portname) {
@@ -101,8 +103,6 @@ lazy_static!{static ref VALIDATE_IP_RANGE: Regex = Regex::new(
   r"^((\s*((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))\s*)|(\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:)))(%.+)?\s*))-((\s*((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))\s*)|(\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:)))(%.+)?\s*))$"
 ).unwrap();}
 lazy_static!{static ref RE: Regex = Regex::new(r"^\D").unwrap();}
-lazy_static!{static ref MACADDRESS: Regex = Regex::new(r"\b(?im:(([\da-f]{2}-){5}[\da-f]{2}))\b").unwrap();}
-
 fn valid_hostname(ipstring: &str) -> Result<(), String> {
   if RE.is_match(ipstring) {
     Ok(())
@@ -172,7 +172,6 @@ struct CheckConfig<'a> {
   dnsserverlist: Vec<&'a str>,
   testports:  Vec<&'a str>,
   verbose:    bool,
-  csvOutput:  bool,
   showheader: bool,
 }
 
@@ -185,7 +184,6 @@ impl<'a> Default for CheckConfig<'a> {
       dnsserverlist: vec![],
       testports:     vec!["80", "135","445"],  //    .to_string()
       verbose:       false,
-      csvOutput:     false,
       showheader:    true,
     }
   }
@@ -241,47 +239,21 @@ fn parse_args() -> clap::ArgMatches {
     (version : crate_version!())
     (author  : crate_authors!("\n"))
     (about   : crate_description!() )                    // FIXME default_value(LOCALHOST)
-    (@arg TARGETS:                                ...                                         "Query targets")
-    (@arg HOST:    -e -a --host  {valid_hostname} ... +takes_value                            "Query names or addresses" )
-    (@arg RANGE:      -r --range {valid_range}    ... +takes_value                            "Query Addresse ranges"   )
-    (@arg CIDR:    --net --cidr  {valid_cidr}     ... +takes_value                            "Query network ranges"   )
-    (@arg FILENAME:   -f --filename    --path         +takes_value                            "Read targets from file(s)")
-    (@arg PORT:       -p --port  {valid_port}     ... +takes_value default_value(DEFAULTPORT) "Ports to test"            )
-    (@arg TIMEOUT: -w -t --timeout     --wait         +takes_value default_value(WAIT)        "Timeout: seconds or milliseconds")
-    (@arg NAMESERVER: -n --nameserver  --dns      ... +takes_value                            "Nameservers to use")
-    (@arg ARP:        -A --arp --ARP                                                          "Also try local DNS resolver")
-    (@arg LOCALDNS:   -l --uselocalDNS --localDNS --uselocal                                  "Also try local DNS resolver")
-    (@arg VERBOSE:    -v --verbose                                                            "Print verbose information")
-    (@arg CSVOUT:     -s --csv --csvout                                                       "Output CSV results")
-    (@arg NOHEADER:   -o --noheader --omit                                                    "Omit header from output")
+    (@arg TARGETS:                                ...                                          "Query targets")
+    (@arg HOST:    -e -a --host  {valid_hostname} ... +takes_value                             "Query names or addresses" )
+    (@arg RANGE:      -r --range {valid_range}    ... +takes_value                             "Query Addresse ranges"   )
+    (@arg CIDR:    --net --cidr  {valid_cidr}     ... +takes_value                             "Query network ranges"   )
+    (@arg FILENAME:   -f --filename    --path         +takes_value                             "Read targets from file(s)")
+    (@arg PORT:       -p --port  {valid_port}     ... +takes_value default_value(DEFAULTPORT)  "Ports to test"            )
+    (@arg TIMEOUT: -w -t --timeout     --wait         +takes_value default_value(WAIT)         "Timeout: seconds or milliseconds")
+    (@arg NAMESERVER: -n --nameserver  --dns      ... +takes_value                             "Nameservers to use")
+    (@arg LOCALDNS:   -l --uselocalDNS --localDNS --uselocal                                   "Also try local DNS resolver")
+    (@arg VERBOSE:    -v --verbose                                                             "Print verbose information")
+    (@arg NOHEADER:   -o --noheader --omit                                                     "Omit header from output")
   ).get_matches()
 }
 
 lazy_static!{static ref MATCHES: clap::ArgMatches = parse_args();}
-
-
-// arp 192.168.239.15; arp -a 192.168.239.15
-// Interface: 192.168.239.10 --- 0x1a
-//  Internet Address      Physical Address      Type
-//  192.168.239.15        8c-49-62-13-87-a1     dynamic
-// Filter on IP or MacAddress (might be multiples), extract MAC
-fn arp_for_MAC(ipaddress: &str) -> String {
-  let arpcmd = "arp.exe";
-  let out = std::process::Command::new(arpcmd)
-                    .args(&[ipaddress])
-                    .output().expect("Couldn't run arp");
-  let _out = format!("{:?}", out);
-  let out = std::process::Command::new(arpcmd)
-                    .args(&["-a", ipaddress])
-                    .output().expect("Couldn't run arp -a");
-  let out = format!("{:?}", out);
-  if false { println!("arp output: {}", out) };
-  let mut captures =  MACADDRESS.captures_iter(&out);
-  match captures.next() {
-    Some(cap) => cap[1].to_string(),
-    _ => "".to_string(),
-  }
-}
 
 // lazy_static!{static ref DEFAULTDNSSERVERS:Vec<&'static str> = getDefaultDNSServers();}
 fn main() -> io::Result<()> {
@@ -292,9 +264,7 @@ fn main() -> io::Result<()> {
   let out = format!("{:?}", out);
   let separator = Regex::new(r"[^.\d]|[\r\n]+").unwrap();
   let dnsDefaultServers: Vec<_> = separator.split(&out).into_iter().filter(|s| s.len() > 6).collect();
-  let arp:         bool = MATCHES.is_present("ARP" );
   let verbose:     bool = MATCHES.is_present("VERBOSE" );
-  let csvOutput:   bool = MATCHES.is_present("CSVOUT"  );
   let showheader:  bool =!MATCHES.is_present("NOHEADER");
   let from_file:   bool = MATCHES.is_present("FILENAME");
   let uselocalDNS: bool = MATCHES.is_present("LOCALDNS");
@@ -309,9 +279,8 @@ fn main() -> io::Result<()> {
     testports:     vec!["80", "135","445"],
     verbose:       verbose,
     showheader:    showheader,
-    csvOutput:     csvOutput,
   };
-  if false {
+  if true {
     println!("default target: {:#?}", target);
     println!("default config: {:#?}", config);
   }
@@ -397,11 +366,12 @@ fn main() -> io::Result<()> {
       hosts.extend(cidrhosts);
     }
   }
-  // if MATCHES.is_present("RANGE") {
-  //   hosts.extend(rangeHosts.iter());
-  //   println!("Line:{} {}", line!(), "1" );
-  //   if true || verbose { println!("rangeHosts: {:?}", rangeHosts); }
-  // }
+  if MATCHES.is_present("RANGE") {
+    //hosts.extend(rangeHosts.iter());
+    // println!("Line:{} {}", line!(), "1" );
+    // if true || verbose { println!("rangeHosts: {:?}", rangeHosts); }
+  }
+
   // --------------------------------------------------------
 
   // TODO review next session to ensure we allow all reasonable combinations of host entry
@@ -454,36 +424,20 @@ fn main() -> io::Result<()> {
   for h in hosts.iter() {
     if h.len() > hostwidth { hostwidth = h.len() }
   };
-  // let port_names = ports.join(" \tPort");
-  // let all_fail   = vec!["false"; port_count].join("\t");   // TODO: Add SomeOpen ???? column
+  let mut threads: Vec<std::thread::JoinHandle<()>> = Vec::new();
+  let port_count = ports.len();
+  let port_names = ports.join(" \tPort");
+  // let all_fail   = vec!["false"; port_count].join("\t"); // TODO: Add SomeOpen ???? column
 
-  if showheader || csvOutput {
-    let port_count = ports.len();
-    if verbose { println!("port_count: {}", port_count); }
-    let portsref = &ports;
-
-    // let arpheader = if arp { "MAC_ADDRESS" } else { "" };
-    let arpheader = match arp {
-      true if csvOutput => ",MAC_ADDRESS",
-      true              => "MAC_ADDRESS       ",
-      _                 => ""
-    };
-    if csvOutput {
-      let port_names: String =
-        portsref.into_iter().map(|p| format!(",Port{}", p)).collect();
-      println!("{},{}{}{}", "IPAddress", "Host", arpheader, port_names);
-    } else if showheader {
-      let port_names: String =
-        portsref.into_iter().map(|p| format!(" Port{:<5}", p)).collect();
-      println!("{:<15} {:<width$} {}{}", "IPAddress", "Host", arpheader, port_names, width=hostwidth);
-    }
+  if verbose { println!("port_count: {}", port_count); }
+  if showheader {
+    println!("{:<15} {:<width$} Port{}", "IPAddress", "Host", port_names, width=hostwidth);
   }
 
-  let mut threads: Vec<std::thread::JoinHandle<()>> = Vec::new();
   for host in hosts {
     let ipAddress: String  = match host.as_bytes()[0].is_ascii_digit() {
       true  => String::from(&host),
-      false => match dnsClient.query_a(&host) {   // TODO improve DNS & multithreading
+      false => match dnsClient.query_a(&host) {   // TODO DNS needs improvement and multithreading
         Ok(ipaddr) if ipaddr.len() > 0 => {    // found at least 1 ip
           let ip = ipaddr[0].to_string();
           if verbose { println!("ip: {} ipaddr.len {} {:?}", ip, ipaddr.len(), ipaddr)};
@@ -508,54 +462,35 @@ fn main() -> io::Result<()> {
     }
     let portlist = ports.clone();
     threads.push(std::thread::spawn(move || {
-      test_tcp_portlist(&ipAddress, &host, &portlist, timeout,
-        hostwidth, arp, csvOutput, showheader, verbose)
+      test_tcp_portlist(&ipAddress, &host, &portlist, timeout, hostwidth)
     }));
   }
   for t in threads { let _ = t.join(); };
   Ok({})
 }
 
-fn test_tcp_socket_address(address: &str, port: u16, timeout: Duration, verbose:bool) -> bool {
+fn test_tcp_socket_address(address: &str, port: u16, timeout: Duration) -> bool {
   let socket_name = format!("{}:{}", address, port);
-  if verbose { println!("socket_name: [{}]", socket_name) };
+  if false { println!("socket_name: [{}]", socket_name) };
   match &socket_name.parse() {
     Ok(socket_addr)  => TcpStream::connect_timeout(socket_addr, timeout).is_ok(),
     _ => false
   }
 }
 
-fn test_tcp_portlist(address: &str, name: &str, ports: &Vec<String>, timeout: Duration,
-                      hostwidth: usize, arp:bool, csvOutput:bool, header:bool, verbose:bool) {
+fn test_tcp_portlist(address: &str, name: &str, ports: &Vec<String>,
+                     timeout: Duration, hostwidth: usize) {
   let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
   for port in ports.iter() {
     let ip: String = address.to_string();
     let port: u16 = port.parse().unwrap();  // TODO: Works but can simplify u16 and remove this
-    threads.push(std::thread::spawn(move || -> bool {
-      test_tcp_socket_address(&ip, port, timeout, verbose)
-    }));
+    threads.push(std::thread::spawn(move || -> bool { test_tcp_socket_address(&ip, port, timeout)}));
   }
-  let arpresult: String = if arp {
-    arp_for_MAC(&address)
-  } else { "".to_string() };
-  if false { println!("arpresult: [{}]", arpresult) };
   let results: Vec<bool> =
     threads.into_iter()
-            .map(|t| t.join().unwrap_or(false))
-            .collect();
-  if csvOutput {
-    let result: Vec<String> = results.into_iter().map(|r| format!(",{}", r)).collect();
-    println!("{},{},{}{}", address, name, arpresult, result.join(""));
-  } else if header {
-    let result: Vec<String> = results.into_iter().map(|r| format!(" {:<9}", r)).collect();
-    println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
-  } else {
-    let result: Vec<String> = results.into_iter().map(|r| format!(" {:<6}", r)).collect();
-    println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
-  }
+           .map(|t| t.join().unwrap_or(false))
+           .collect();
+  let result: Vec<String> = results.into_iter().map(|r| format!("{:?}", r)).collect();
+  println!("{:<15} {:<width$} {}", address, name, result.join("\t"), width=hostwidth);
 }
 
-  //  let portsref = &ports;
-  //  let port_names: String =
-  //    portsref.into_iter().map(|p| format!(" Port{:<5}", p)).collect();
-  //  println!("{:<15} {:<width$} {}", "IPAddress", "Host", port_names, width=hostwidth);

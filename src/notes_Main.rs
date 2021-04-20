@@ -1,4 +1,4 @@
-/* DONE: 
+/* DONE:
 config
   read the hosts
     queue hosts for conversion
@@ -14,8 +14,8 @@ finish
 
 
 /* TODO:
-/// https://docs.rs/ipnet/2.3.0/ipnet/struct.Ipv4AddrRange.html 
-/// https://docs.rs/ipnet/2.3.0/ipnet/enum.IpNet.html 
+/// https://docs.rs/ipnet/2.3.0/ipnet/struct.Ipv4AddrRange.html
+/// https://docs.rs/ipnet/2.3.0/ipnet/enum.IpNet.html
 let net: IpNet = "10.0.0.0/30".parse().unwrap();
 assert_eq!(net.hosts().collect::<Vec<IpAddr>>(), vec![
     "10.0.0.1".parse::<IpAddr>().unwrap(),
@@ -30,6 +30,24 @@ assert_eq!(net.hosts().collect::<Vec<IpAddr>>(), vec![
     "fd00::3".parse().unwrap(),
 ]);
 
+  let mut hostwidth = 20;
+  for h in hosts.iter() {
+    if h.len() > hostwidth { hostwidth = h.len() }
+  };
+  let mut threads: Vec<std::thread::JoinHandle<()>> = Vec::new();
+  // let port_count = ports.len();
+  let port_names: String = ports.into_iter().map(|p| format!("Port{:<5}", p))
+    .collect::<Vec<String>>().join(" ");
+  // let all_fail   = vec!["false"; port_count].join("\t");
+  // let port_names = ports.join(" \tPort");
+  // let all_fail   = vec!["false"; port_count].join("\t");
+  if showheader {
+    println!("{:<15} {:<width$} {} SomeOpen", "IPAddress", "Host", port_names, width=hostwidth);
+  }
+
+
+$x = D:\Library\Rust\ipcheck\target\release\ripcheck.exe -a 192.168.239.10 --port 1-1023
+$x -replace '\s+',',' | ConvertFrom-CSV | findstr '192.168 true'
 
 */
 

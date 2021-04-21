@@ -202,7 +202,7 @@ struct Target {
 impl Default for Target {
   fn default() -> Target {
     let host: &str     = "localhost";
-    let socket: String = format!("{}:135", host);
+    let socket: String = format!("localhost:135");
     Target {
       hostname    : host.to_string(),
       ipaddress   : "127.0.0.3".to_string(),
@@ -450,36 +450,12 @@ fn main() -> io::Result<()> {
   }
 //  }
 
-  let mut hostwidth = 20;
-  for h in hosts.iter() {
-    if h.len() > hostwidth { hostwidth = h.len() }
-  };
-  // let port_names = ports.join(" \tPort");
-  // let all_fail   = vec!["false"; port_count].join("\t");   // TODO: Add SomeOpen ???? column
-
-  if showheader || csvOutput {
-    let port_count = ports.len();
-    if verbose { println!("port_count: {}", port_count); }
-    let portsref = &ports;
-
-    // let arpheader = if arp { "MAC_ADDRESS" } else { "" };
-    let arpheader = match arp {
-      true if csvOutput => ",MAC_ADDRESS",
-      true              => "MAC_ADDRESS       ",
-      _                 => ""
-    };
-    if csvOutput {
-      let port_names: String =
-        portsref.into_iter().map(|p| format!(",Port{}", p)).collect();
-      println!("{},{}{}{}", "IPAddress", "Host", arpheader, port_names);
-    } else if showheader {
-      let port_names: String =
-        portsref.into_iter().map(|p| format!(" Port{:<5}", p)).collect();
-      println!("{:<15} {:<width$} {}{}", "IPAddress", "Host", arpheader, port_names, width=hostwidth);
-    }
-  }
-
   let mut threads: Vec<std::thread::JoinHandle<()>> = Vec::new();
+  let mut targets: Box<Vec<Box<Target>>> = Box::new(Vec::with_capacity(hosts.len()));
+
+  let mut hostwidth = 20;
+//  for h in hosts.clone() {
+//  };
   for host in hosts {
     let ipAddress: String  = match host.as_bytes()[0].is_ascii_digit() {
       true  => String::from(&host),
@@ -502,15 +478,59 @@ fn main() -> io::Result<()> {
       }
     };
     if false  { println!("host: [{}]", host) };
-    if ipAddress == "[]" {
-      println!("{:<15} {:<width$}", ipAddress, host, width=hostwidth);
-      continue;
+    if host.len() > hostwidth { hostwidth = host.len() }
+    // if ipAddress == "[]" {
+    //   println!("{:<15} {:<width$}", ipAddress, host, width=hostwidth);
+    //   continue;
+    // }
+    let target = Box::new(Target{
+      hostname    : format!("{}", host),
+      ipaddress   : format!("{}", ipAddress),
+      reachable   : Vec::with_capacity(ports.len()),
+      ..Default::default()
+    });
+    targets.push(target);
+/*  if false {
+      let portlist = ports.clone();
+      threads.push(std::thread::spawn(move || {
+        test_tcp_portlist(&ipAddress, &host, &portlist, timeout,
+          hostwidth, arp, csvOutput, showheader, verbose)
+      }));
     }
+*/
+  }
+  // let port_names = ports.join(" \tPort");
+  // let all_fail   = vec!["false"; port_count].join("\t");   // TODO: Add SomeOpen ???? column
+  if showheader || csvOutput {
+    let port_count = ports.len();
+    if verbose { println!("port_count: {}", port_count); }
+    let portsref = &ports;
+
+    // let arpheader = if arp { "MAC_ADDRESS" } else { "" };
+    let arpheader = match arp {
+      true if csvOutput => ",MAC_ADDRESS",
+      true              => "MAC_ADDRESS       ",
+      _                 => ""
+    };
+    if csvOutput {
+      let port_names: String =
+        portsref.into_iter().map(|p| format!(",Port{}", p)).collect();
+      println!("{},{}{}{}", "IPAddress", "Host", arpheader, port_names);
+    } else if showheader {
+      let port_names: String =
+        portsref.into_iter().map(|p| format!(" Port{:<5}", p)).collect();
+      println!("{:<15} {:<width$} {}{}", "IPAddress", "Host", arpheader, port_names, width=hostwidth);
+    }
+  }
+  for target in targets.into_iter() {
     let portlist = ports.clone();
-    threads.push(std::thread::spawn(move || {
-      test_tcp_portlist(&ipAddress, &host, &portlist, timeout,
-        hostwidth, arp, csvOutput, showheader, verbose)
-    }));
+    let t = target;
+    if true {
+      threads.push(std::thread::spawn(move || {
+        test_tcp_portlist(&t, &portlist, timeout,
+          hostwidth, arp, csvOutput, showheader, verbose)
+      }));
+    }
   }
   for t in threads { let _ = t.join(); };
   Ok({})
@@ -525,7 +545,39 @@ fn test_tcp_socket_address(address: &str, port: u16, timeout: Duration, verbose:
   }
 }
 
-fn test_tcp_portlist(address: &str, name: &str, ports: &Vec<String>, timeout: Duration,
+fn test_tcp_portlist(target: & Target, ports: &Vec<String>, timeout: Duration,
+                      hostwidth: usize, arp:bool, csvOutput:bool, header:bool, verbose:bool) {
+  let address: &str = &target.ipaddress;
+  let name: &str = &target.hostname;
+  let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
+  for port in ports.iter() {
+    let ip: String = address.to_string();
+    let port: u16 = port.parse().unwrap();  // TODO: Works but can simplify u16 and remove this
+    threads.push(std::thread::spawn(move || -> bool {
+      test_tcp_socket_address(&ip, port, timeout, verbose)
+    }));
+  }
+  let arpresult: String = if arp {
+    arp_for_MAC(&address)
+  } else { "".to_string() };
+  if false { println!("arpresult: [{}]", arpresult) };
+  let results: Vec<bool> =
+    threads.into_iter()
+            .map(|t| t.join().unwrap_or(false))
+            .collect();
+  if csvOutput {
+    let result: Vec<String> = results.into_iter().map(|r| format!(",{}", r)).collect();
+    println!("{},{},{}{}", address, name, arpresult, result.join(""));
+  } else if header {
+    let result: Vec<String> = results.into_iter().map(|r| format!(" {:<9}", r)).collect();
+    println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
+  } else {
+    let result: Vec<String> = results.into_iter().map(|r| format!(" {:<6}", r)).collect();
+    println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
+  }
+}
+
+fn _test_tcp_portlist(address: &str, name: &str, ports: &Vec<String>, timeout: Duration,
                       hostwidth: usize, arp:bool, csvOutput:bool, header:bool, verbose:bool) {
   let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
   for port in ports.iter() {

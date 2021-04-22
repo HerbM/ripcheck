@@ -66,5 +66,5 @@ OPTIONS:
     -p, --port <PORT>...             Ports to test [default: 135]
     -r, --range <RANGE>...           Query Addresse ranges
     -t, --wait <TIMEOUT>             Timeout: seconds or milliseconds [default: 4000]
-    ```
+```
 

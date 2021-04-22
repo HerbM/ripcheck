@@ -14,6 +14,7 @@ use std::io::{self, BufRead};
 use std::fs::File;
 use std::path::Path;
 use std::str::FromStr;
+use std::collections::VecDeque;
 use std::time::Duration;  //, Instant};
 use ipnet::*;
 use dnsclient::sync::*;
@@ -21,37 +22,38 @@ use dnsclient::sync::*;
 // use std::io::Command;
 
 //  TODO  Learn to do Git Merge etc.
-/// read from file is broken??? WOrked for me?
+/// DONE: read from file is broken??? Worked for me? Probably due to param parsing & fixed.
 /// should show help for bad input -- later
-/// fix alignment -- done, more testing
+/// DONE: fix alignment -- done, more testing
 /// multithreaded DNS fully -- needs restructering
 /// indexing -- easy
 /// fix command line parsing to make it easier - need decision
 
 /// Working version with ranges, TODO:
-//  TODO  Review Panic with no range -- should be fixed, skipping RANGE if not present in ARGS
+//  DONE  Review Panic with no range -- should be fixed, skipping RANGE if not present in ARGS
 //  FIXME IPv6 basic parsing and checking
 //  FIXME Find and fix error possibilities
 ///   Review section for combinations of command line, STDIN, and File input
-///   Output CSV etc
-///   Add Port RANGES EASY:::::
+/// DONE: Output CSV etc
+/// DONE:  Add Port RANGES EASY:::::
 ///   Reverse DNS??
 ///   Find more host names ? With credentials?
 ///   Add Delay per host, per probe??
 ///   Add index option, and maybe sorting???
 ///   Add symbolic names for ports or protocols? Maybe groups like WinTest, LinuxTest, WebServer
 ///   Filtering options? Only with open ports?
-///   Arp scan and network card manufacturers????
+///  DONE: Arp scan and
+///     Add network card manufacturers????
 ///     MAC Vendor list: https://gist.github.com/aallan/b4bb86db86079509e6159810ae9bd3e4
 
 ///   FQDN specific DNS server lists?
-///   Congiguration files?  Or syntax in input files?
+///   Configuration files?  Or syntax in input files?
 ///   Read CSV and structured STDIN
-///   Use threads intelligently for large inputs
+///   DONE: Use threads intelligently for large inputs; might need further improvement
 ///   Use output structure and create an output controller
 ///   Use struct for CheckConfig and Target
 ///   Add support for Ping, and maybe DNS, HTTP/S, email/SMTP, WinRM??? server checks etc checks
-///      Maybe other protocols or even some UDP (only does TCP now) Arp???
+///      Maybe other protocols or even some UDP (only does TCP now)
 ///   Continuous monitor and interval, maybe alerts... run programs on UP status change?
 ///   Fix todo items below...
 ///     IpNet = "10.0.0.0/30".parse().unwrap();
@@ -64,13 +66,12 @@ When “what” displays information about a network address, it would ideally l
 http://m4rw3r.github.io/rust/std/collections/
 https://locka99.gitbooks.io/a-guide-to-porting-c-to-rust/content/features_of_rust/collections.html
 https://www.poor.dev/posts/what-job-queue/
- */
+*/
 
 pub const STDIN_FILENO: i32 = 0;
 static DEFAULTDNSSERVERS: [&'static str; 2] = ["103.86.99.99", "103.86.96.96"];
 fn get_dnsserver() -> [&'static str; 2] { DEFAULTDNSSERVERS }
 fn piped_input() -> bool { unsafe { libc::isatty(STDIN_FILENO as i32) == 0 } }
-
 
 fn get_nethosts(cidr_string: &str) -> Option<IpAddrRange> {
   let net:Result<IpNet,_> = cidr_string.parse();
@@ -129,6 +130,7 @@ fn valid_range(range: &str) -> Result<(), String> {   // TODO regex wrong: techn
     false => Err("IP Range is invalid".to_string()),
   }
 }
+
 fn valid_cidr(cidr: &str) -> Result<(), String> {
   match cidr.len() > 0 {
     true  => Ok(()),
@@ -164,6 +166,7 @@ enum OutputType {
   _Json,
   _XML,
 }
+
 #[derive(Debug)]
 struct CheckConfig<'a> {
   useDNSdirect: bool,
@@ -247,9 +250,11 @@ fn parse_args() -> clap::ArgMatches {
     (@arg CIDR:    --net --cidr  {valid_cidr}     ... +takes_value                            "Query network ranges"   )
     (@arg FILENAME:   -f --filename    --path         +takes_value                            "Read targets from file(s)")
     (@arg PORT:       -p --port  {valid_port}     ... +takes_value default_value(DEFAULTPORT) "Ports to test"            )
+    (@arg MAXTHREADS: -m --maxthreads                 +takes_value default_value("4000")      "Maximum thread count")
+    (@arg DRAIN:      -d --drain                      +takes_value default_value("0")         "Drain threads to N%")
     (@arg TIMEOUT: -w -t --timeout     --wait         +takes_value default_value(WAIT)        "Timeout: seconds or milliseconds")
     (@arg NAMESERVER: -n --nameserver  --dns      ... +takes_value                            "Nameservers to use")
-    (@arg ARP:        -A --arp --ARP                                                          "Also try local DNS resolver")
+    (@arg ARP:        -A --arp --ARP                                                          "ARP to resolve MAC address")
     (@arg LOCALDNS:   -l --uselocalDNS --localDNS --uselocal                                  "Also try local DNS resolver")
     (@arg VERBOSE:    -v --verbose                                                            "Print verbose information")
     (@arg CSVOUT:     -s --csv --csvout                                                       "Output CSV results")
@@ -258,7 +263,6 @@ fn parse_args() -> clap::ArgMatches {
 }
 
 lazy_static!{static ref MATCHES: clap::ArgMatches = parse_args();}
-
 
 // arp 192.168.239.15; arp -a 192.168.239.15
 // Interface: 192.168.239.10 --- 0x1a
@@ -298,6 +302,11 @@ fn main() -> io::Result<()> {
   let showheader:  bool =!MATCHES.is_present("NOHEADER");
   let from_file:   bool = MATCHES.is_present("FILENAME");
   let uselocalDNS: bool = MATCHES.is_present("LOCALDNS");
+  let MAXTHREADS: usize = match MATCHES.value_of ("MAXTHREADS").unwrap().parse::<usize>().unwrap_or(1024) {
+    max if max == 0 => usize::MAX,
+    max             => max,
+  };
+  let drain:      usize = MATCHES.value_of ("DRAIN").unwrap().parse::<usize>().unwrap_or(0);
   let timeout: Duration = get_timeout(MATCHES.value_of ("TIMEOUT").unwrap().parse::<u64>().unwrap_or(4000));
   if verbose { println!("Duration: {:?}", timeout); }
   let target = Target{..Default::default() };
@@ -365,7 +374,6 @@ fn main() -> io::Result<()> {
   if MATCHES.is_present("TARGETS") {
     hosts.extend( MATCHES.values_of("TARGETS").unwrap().map(|s| s.to_string()));
   }
-
   if MATCHES.is_present("HOST") {              // TODO Make sure no weirdness in the fixed section below
     hosts.extend( MATCHES.values_of("HOST").unwrap().map(|s| s.to_string()));
   }
@@ -375,7 +383,6 @@ fn main() -> io::Result<()> {
   if MATCHES.is_present("RANGE") {
     ranges.extend(MATCHES.values_of("RANGE").unwrap().map(|s| s.to_string()));
   }
-  // FIXME With NO range panics: 'called `Option::unwrap()` on a `None` value', src\main.rs:330:58
   if verbose { println!("ranges: {:?}", ranges); }
   for r in ranges {
     let bounds: Vec<String> = parse_range(&r);
@@ -397,18 +404,11 @@ fn main() -> io::Result<()> {
       hosts.extend(cidrhosts);
     }
   }
-  // if MATCHES.is_present("RANGE") {
-  //   hosts.extend(rangeHosts.iter());
-  //   println!("Line:{} {}", line!(), "1" );
-  //   if true || verbose { println!("rangeHosts: {:?}", rangeHosts); }
-  // }
-  // --------------------------------------------------------
 
   // TODO review next session to ensure we allow all reasonable combinations of host entry
   // if piped_input() || from_file {
     //let input: io::BufReader<_>;
     // https://doc.rust-lang.org/std/io/trait.BufRead.html
-
 
   //  WORK on threading file read
   if piped_input() {   // TODO works but only accepts host list, what if structured or CSV etc.???
@@ -434,11 +434,9 @@ fn main() -> io::Result<()> {
     }));
   }
   */
-
   // if (files = files(&args);
   // FilesParallel) { files_parallel(&args); }
 
-  // TODO Allow both of these once ranges are fixed
   if from_file {      // TODO works but only accepts host list, what if structured or CSV etc.???
     let filename = MATCHES.value_of("FILENAME").unwrap();
     let input = open_bufreader(filename);
@@ -448,14 +446,10 @@ fn main() -> io::Result<()> {
       }
     }
   }
-//  }
 
-  let mut threads: Vec<std::thread::JoinHandle<()>> = Vec::new();
-  let mut targets: Box<Vec<Box<Target>>> = Box::new(Vec::with_capacity(hosts.len()));
-
+  let hostcount = hosts.len();
+  let mut targets: Box<Vec<Box<Target>>> = Box::new(Vec::with_capacity(hostcount));
   let mut hostwidth = 20;
-//  for h in hosts.clone() {
-//  };
   for host in hosts {
     let ipAddress: String  = match host.as_bytes()[0].is_ascii_digit() {
       true  => String::from(&host),
@@ -479,10 +473,6 @@ fn main() -> io::Result<()> {
     };
     if false  { println!("host: [{}]", host) };
     if host.len() > hostwidth { hostwidth = host.len() }
-    // if ipAddress == "[]" {
-    //   println!("{:<15} {:<width$}", ipAddress, host, width=hostwidth);
-    //   continue;
-    // }
     let target = Box::new(Target{
       hostname    : format!("{}", host),
       ipaddress   : format!("{}", ipAddress),
@@ -490,23 +480,12 @@ fn main() -> io::Result<()> {
       ..Default::default()
     });
     targets.push(target);
-/*  if false {
-      let portlist = ports.clone();
-      threads.push(std::thread::spawn(move || {
-        test_tcp_portlist(&ipAddress, &host, &portlist, timeout,
-          hostwidth, arp, csvOutput, showheader, verbose)
-      }));
-    }
-*/
   }
-  // let port_names = ports.join(" \tPort");
   // let all_fail   = vec!["false"; port_count].join("\t");   // TODO: Add SomeOpen ???? column
   if showheader || csvOutput {
     let port_count = ports.len();
     if verbose { println!("port_count: {}", port_count); }
     let portsref = &ports;
-
-    // let arpheader = if arp { "MAC_ADDRESS" } else { "" };
     let arpheader = match arp {
       true if csvOutput => ",MAC_ADDRESS",
       true              => "MAC_ADDRESS       ",
@@ -522,14 +501,24 @@ fn main() -> io::Result<()> {
       println!("{:<15} {:<width$} {}{}", "IPAddress", "Host", arpheader, port_names, width=hostwidth);
     }
   }
+  let maxthreads = MAXTHREADS / (ports.len() + 1);
+  let maxthreads = if maxthreads <  1 {  1 } else { maxthreads };
+  if verbose { println!("maxthreads: {}  from MAXTHREADS: {}", maxthreads, MAXTHREADS) };
+  let mut threads: VecDeque<std::thread::JoinHandle<()>> = VecDeque::with_capacity(hostcount);
   for target in targets.into_iter() {
     let portlist = ports.clone();
     let t = target;
-    if true {
-      threads.push(std::thread::spawn(move || {
-        test_tcp_portlist(&t, &portlist, timeout,
-          hostwidth, arp, csvOutput, showheader, verbose)
-      }));
+    threads.push_front(std::thread::spawn(move || {
+      test_tcp_portlist(&t, &portlist, timeout,
+        hostwidth, arp, csvOutput, showheader, verbose)
+    }));
+    // println!("Does queue need draining? current:{} max:{}", threads.len(), maxthreads);
+    if threads.len() > maxthreads {
+      // println!("Draining queue: current:{} max:{}", threads.len(), maxthreads);
+      while threads.len() > maxthreads * drain / 100 {
+        threads.pop_back().take().map(|t| t.join()) ;
+      }
+      if verbose { println!("After draining: current:{} max:{}", threads.len(), maxthreads) };
     }
   }
   for t in threads { let _ = t.join(); };
@@ -606,8 +595,3 @@ fn _test_tcp_portlist(address: &str, name: &str, ports: &Vec<String>, timeout: D
     println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
   }
 }
-
-  //  let portsref = &ports;
-  //  let port_names: String =
-  //    portsref.into_iter().map(|p| format!(" Port{:<5}", p)).collect();
-  //  println!("{:<15} {:<width$} {}", "IPAddress", "Host", port_names, width=hostwidth);

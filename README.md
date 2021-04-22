@@ -1,16 +1,16 @@
 # ripcheck
 
-## Fast ARP &amp; TCP Port Checker in Rust
+## Fast ARP &amp; TCP Port Checker in Rust versin 0.0.8
 
 This is an early alpha version, and my first project as a beginner using Rust.
 
 It has only been tested on Windows though it will eventually run on Linux etc.
 
 **CAUTION:** It can cause excessive CPU or Network traffic with an injudicious parameter list.
-    
-    It has no limit on the number of threads used.
-    
-    It will typically use Number of Hosts * Number of (Ports + 1) being checked.
+
+    Option to limit thread count has been added.
+
+    It may use Number of Hosts * Number of (Ports + 1) being checked.
 
 Expect the parameters names and usage to change since it is currently more complicated than necessary.
 
@@ -37,7 +37,7 @@ IPAddress      Host                MAC_ADDRESS        Port22    Port80    Port44
 
 ### Usage:
 ```
-ripcheck 0.0.7
+ripcheck 0.0.8
 HerbM <HerbMartin@GMail.com>
 Fast ARP & TCP Port Checker in Rust
 
@@ -48,7 +48,7 @@ ARGS:
     <TARGETS>...    Query targets
 
 FLAGS:
-    -A, --ARP         Also try local DNS resolver
+    -A, --ARP         ARP to resolve MAC address
     -s, --csvout      Output CSV results
     -l, --uselocal    Also try local DNS resolver
     -o, --omit        Omit header from output
@@ -57,12 +57,14 @@ FLAGS:
     -V, --version     Prints version information
 
 OPTIONS:
-        --cidr <CIDR>...         Query network ranges
-    -f, --path <FILENAME>        Read targets from file(s)
-    -a, --host <HOST>...         Query names or addresses
-    -n, --dns <NAMESERVER>...    Nameservers to use
-    -p, --port <PORT>...         Ports to test [default: 135]
-    -r, --range <RANGE>...       Query Addresse ranges
-    -t, --wait <TIMEOUT>         Timeout: seconds or milliseconds [default: 4000]
-```
+        --cidr <CIDR>...             Query network ranges
+    -d, --drain <DRAIN>              Drain threads to N% [default: 0]
+    -f, --path <FILENAME>            Read targets from file(s)
+    -a, --host <HOST>...             Query names or addresses
+    -m, --maxthreads <MAXTHREADS>    Maximum thread count [default: 4000]
+    -n, --dns <NAMESERVER>...        Nameservers to use
+    -p, --port <PORT>...             Ports to test [default: 135]
+    -r, --range <RANGE>...           Query Addresse ranges
+    -t, --wait <TIMEOUT>             Timeout: seconds or milliseconds [default: 4000]
+    ```
 

@@ -1,6 +1,6 @@
 [package]
 name    = "ripcheck"
-version = "0.0.8" # Includes arp, better structure & better threading
+version = "0.0.9" # Includes arp, better structure & better threading,fixes extra field when no arp
 authors = ["HerbM <HerbMartin@GMail.com>"]
 description = "Fast ARP & TCP Port Checker in Rust"
 edition = "2018"

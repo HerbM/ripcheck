@@ -64,7 +64,7 @@ OPTIONS:
     -m, --maxthreads <MAXTHREADS>    Maximum thread count [default: 4000]
     -n, --dns <NAMESERVER>...        Nameservers to use
     -p, --port <PORT>...             Ports to test [default: 135]
-    -r, --range <RANGE>...           Query Addresse ranges
+    -r, --range <RANGE>...           Query Address ranges
     -t, --wait <TIMEOUT>             Timeout: seconds or milliseconds [default: 4000]
 ```
 

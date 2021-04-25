@@ -244,31 +244,26 @@ fn parse_args() -> clap::ArgMatches {
     (version : crate_version!())
     (author  : crate_authors!("\n"))
     (about   : crate_description!() )                    // FIXME default_value(LOCALHOST)
-    (@arg TARGETS:                                ...                                         "Query targets")
-    (@arg HOST:    -e -a --host  {valid_hostname} ... +takes_value                            "Query names or addresses" )
-    (@arg RANGE:      -r --range {valid_range}    ... +takes_value                            "Query Addresse ranges"   )
-    (@arg CIDR:    --net --cidr  {valid_cidr}     ... +takes_value                            "Query network ranges"   )
-    (@arg FILENAME:   -f --filename    --path         +takes_value                            "Read targets from file(s)")
-    (@arg PORT:       -p --port  {valid_port}     ... +takes_value default_value(DEFAULTPORT) "Ports to test"            )
-    (@arg MAXTHREADS: -m --maxthreads                 +takes_value default_value("4000")      "Maximum thread count")
-    (@arg DRAIN:      -d --drain                      +takes_value default_value("0")         "Drain threads to N%")
+    (@arg TARGETS:                                ...                                         "Query targets"                   )
+    (@arg HOST:    -e -a --host  {valid_hostname} ... +takes_value                            "Query names or addresses"        )
+    (@arg RANGE:      -r --range {valid_range}    ... +takes_value                            "Query Address ranges"            )
+    (@arg CIDR:   -N --net --cidr {valid_cidr}    ... +takes_value                            "Query network ranges"            )
+    (@arg FILENAME:   -f --filename    --path         +takes_value                            "Read targets from file(s)"       )
+    (@arg PORT:       -p --port  {valid_port}     ... +takes_value default_value(DEFAULTPORT) "Ports to test"                   )
+    (@arg MAXTHREADS: -m --maxthreads                 +takes_value default_value("4000")      "Maximum thread count"            )
+    (@arg DRAIN:      -d --drain                      +takes_value default_value("0")         "Drain threads to N%"             )
     (@arg TIMEOUT: -w -t --timeout     --wait         +takes_value default_value(WAIT)        "Timeout: seconds or milliseconds")
-    (@arg NAMESERVER: -n --nameserver  --dns      ... +takes_value                            "Nameservers to use")
-    (@arg ARP:        -A --arp --ARP                                                          "ARP to resolve MAC address")
-    (@arg LOCALDNS:   -l --uselocalDNS --localDNS --uselocal                                  "Also try local DNS resolver")
-    (@arg VERBOSE:    -v --verbose                                                            "Print verbose information")
-    (@arg CSVOUT:     -s --csv --csvout                                                       "Output CSV results")
-    (@arg NOHEADER:   -o --noheader --omit                                                    "Omit header from output")
+    (@arg NAMESERVER: -n --nameserver  --dns      ... +takes_value                            "Nameservers to use"              )
+    (@arg ARP:        -A --arp --ARP                                                          "ARP to resolve MAC address"      )
+    (@arg LOCALDNS:   -l --uselocalDNS --localDNS --uselocal                                  "Also try local DNS resolver"     )
+    (@arg VERBOSE:    -v --verbose                                                            "Print verbose information"       )
+    (@arg CSVOUT:     -s --csv --csvout                                                       "Output CSV results"              )
+    (@arg NOHEADER:   -o --noheader --omit                                                    "Omit header from output"         )
   ).get_matches()
 }
 
 lazy_static!{static ref MATCHES: clap::ArgMatches = parse_args();}
 
-// arp 192.168.239.15; arp -a 192.168.239.15
-// Interface: 192.168.239.10 --- 0x1a
-//  Internet Address      Physical Address      Type
-//  192.168.239.15        8c-49-62-13-87-a1     dynamic
-// Filter on IP or MacAddress (might be multiples), extract MAC
 fn arp_for_MAC(ipaddress: &str) -> String {
   let arpcmd = "arp.exe";
   let out = std::process::Command::new(arpcmd)
@@ -309,19 +304,17 @@ fn main() -> io::Result<()> {
   let drain:      usize = MATCHES.value_of ("DRAIN").unwrap().parse::<usize>().unwrap_or(0);
   let timeout: Duration = get_timeout(MATCHES.value_of ("TIMEOUT").unwrap().parse::<u64>().unwrap_or(4000));
   if verbose { println!("Duration: {:?}", timeout); }
-  let target = Target{..Default::default() };
   let config = CheckConfig {
     useDNSdirect:  false,
-    timeout:       timeout,
+    timeout,
     outputType:    OutputType::Table,
     dnsserverlist: dnsDefaultServers,
     testports:     vec!["80", "135","445"],
-    verbose:       verbose,
-    showheader:    showheader,
-    csvOutput:     csvOutput,
+    verbose,
+    showheader,
+    csvOutput,
   };
   if false {
-    println!("default target: {:#?}", target);
     println!("default config: {:#?}", config);
   }
   fn get_portnumbers(portarg:&str) -> Vec<String> {   //
@@ -377,7 +370,6 @@ fn main() -> io::Result<()> {
   if MATCHES.is_present("HOST") {              // TODO Make sure no weirdness in the fixed section below
     hosts.extend( MATCHES.values_of("HOST").unwrap().map(|s| s.to_string()));
   }
-  // WORKING: Fix range not printing
   if verbose { println!("Line:{} {}", line!(), "MATCHES.is_present(\"RANGE\")" );}
   let mut ranges: Vec<String>   = vec![];
   if MATCHES.is_present("RANGE") {
@@ -474,9 +466,9 @@ fn main() -> io::Result<()> {
     if false  { println!("host: [{}]", host) };
     if host.len() > hostwidth { hostwidth = host.len() }
     let target = Box::new(Target{
-      hostname    : format!("{}", host),
-      ipaddress   : format!("{}", ipAddress),
-      reachable   : Vec::with_capacity(ports.len()),
+      hostname  : format!("{}", host),
+      ipaddress : format!("{}", ipAddress),
+      reachable : Vec::with_capacity(ports.len()),
       ..Default::default()
     });
     targets.push(target);
@@ -534,6 +526,10 @@ fn test_tcp_socket_address(address: &str, port: u16, timeout: Duration, verbose:
   }
 }
 
+//  Fix extra field when not ARPING
+//
+//
+
 fn test_tcp_portlist(target: & Target, ports: &Vec<String>, timeout: Duration,
                       hostwidth: usize, arp:bool, csvOutput:bool, header:bool, verbose:bool) {
   let address: &str = &target.ipaddress;
@@ -555,38 +551,13 @@ fn test_tcp_portlist(target: & Target, ports: &Vec<String>, timeout: Duration,
             .map(|t| t.join().unwrap_or(false))
             .collect();
   if csvOutput {
-    let result: Vec<String> = results.into_iter().map(|r| format!(",{}", r)).collect();
-    println!("{},{},{}{}", address, name, arpresult, result.join(""));
-  } else if header {
-    let result: Vec<String> = results.into_iter().map(|r| format!(" {:<9}", r)).collect();
-    println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
-  } else {
-    let result: Vec<String> = results.into_iter().map(|r| format!(" {:<6}", r)).collect();
-    println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
-  }
-}
-
-fn _test_tcp_portlist(address: &str, name: &str, ports: &Vec<String>, timeout: Duration,
-                      hostwidth: usize, arp:bool, csvOutput:bool, header:bool, verbose:bool) {
-  let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
-  for port in ports.iter() {
-    let ip: String = address.to_string();
-    let port: u16 = port.parse().unwrap();  // TODO: Works but can simplify u16 and remove this
-    threads.push(std::thread::spawn(move || -> bool {
-      test_tcp_socket_address(&ip, port, timeout, verbose)
-    }));
-  }
-  let arpresult: String = if arp {
-    arp_for_MAC(&address)
-  } else { "".to_string() };
-  if false { println!("arpresult: [{}]", arpresult) };
-  let results: Vec<bool> =
-    threads.into_iter()
-            .map(|t| t.join().unwrap_or(false))
-            .collect();
-  if csvOutput {
-    let result: Vec<String> = results.into_iter().map(|r| format!(",{}", r)).collect();
-    println!("{},{},{}{}", address, name, arpresult, result.join(""));
+    if arp {
+      let result: Vec<String> = results.into_iter().map(|r| format!(",{}", r)).collect();
+      println!("{},{},{}{}", address, name, arpresult, result.join(""));
+    } else {
+      let result: Vec<String> = results.into_iter().map(|r| format!(",{}", r)).collect();
+      println!("{},{}{}", address, name, result.join(""));
+    }
   } else if header {
     let result: Vec<String> = results.into_iter().map(|r| format!(" {:<9}", r)).collect();
     println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);

@@ -360,7 +360,7 @@ fn main() -> io::Result<()> {
     nsAddress.iter().filter_map(|ns| format!("{}:53", ns).parse::<SocketAddr>().ok()).collect();
   let dnsServers =
     nsSocket.iter().map(|ns| dnsclient::UpstreamServer::new(*ns)).collect();
-  let dnsClient: DNSClient  = dnsclient::sync::DNSClient::new(dnsServers);
+  let dnsClient: DNSClient  = DNSClient::new(dnsServers);
   let mut hosts:Vec<String> = Vec::with_capacity(128);  // OK? Seems reasonable
 
   // TODO --------------------------------------------------------
@@ -499,10 +499,11 @@ fn main() -> io::Result<()> {
   let mut threads: VecDeque<std::thread::JoinHandle<()>> = VecDeque::with_capacity(hostcount);
   for target in targets.into_iter() {
     let portlist = ports.clone();
+    let resolver = dnsClient.clone();
     let t = target;
     threads.push_front(std::thread::spawn(move || {
       test_tcp_portlist(&t, &portlist, timeout,
-        hostwidth, arp, csvOutput, showheader, verbose)
+        hostwidth, arp, csvOutput, showheader, verbose, &resolver)
     }));
     // println!("Does queue need draining? current:{} max:{}", threads.len(), maxthreads);
     if threads.len() > maxthreads {
@@ -531,10 +532,18 @@ fn test_tcp_socket_address(address: &str, port: u16, timeout: Duration, verbose:
 //
 
 fn test_tcp_portlist(target: & Target, ports: &Vec<String>, timeout: Duration,
-                      hostwidth: usize, arp:bool, csvOutput:bool, header:bool, verbose:bool) {
+                      hostwidth: usize, arp:bool, csvOutput:bool, header:bool, verbose:bool,
+                      _dnsclient: &DNSClient) {
   let address: &str = &target.ipaddress;
   let name: &str = &target.hostname;
   let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
+  if verbose {
+    let test = "142.250.68.164";
+    let ip: std::net::IpAddr = test.parse().unwrap();
+    let testname = dns_lookup::lookup_addr(&ip).unwrap();
+    // https://docs.rs/dns-lookup/1.0.6/dns_lookup/
+    println!("Reverse: {:#?}", testname);
+  }
   for port in ports.iter() {
     let ip: String = address.to_string();
     let port: u16 = port.parse().unwrap();  // TODO: Works but can simplify u16 and remove this
@@ -559,10 +568,20 @@ fn test_tcp_portlist(target: & Target, ports: &Vec<String>, timeout: Duration,
       println!("{},{}{}", address, name, result.join(""));
     }
   } else if header {
-    let result: Vec<String> = results.into_iter().map(|r| format!(" {:<9}", r)).collect();
-    println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
+    if arp {
+      let result: Vec<String> = results.into_iter().map(|r| format!(" {:<9}", r)).collect();
+      println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
+    } else {
+      let result: Vec<String> = results.into_iter().map(|r| format!(" {:<9}", r)).collect();
+      println!("{:<15} {:<width$} {}", address, name, result.join(""), width=hostwidth);
+    }
   } else {
-    let result: Vec<String> = results.into_iter().map(|r| format!(" {:<6}", r)).collect();
-    println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
+    if arp {
+      let result: Vec<String> = results.into_iter().map(|r| format!(" {:<6}", r)).collect();
+      println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
+    } else {
+      let result: Vec<String> = results.into_iter().map(|r| format!(" {:<6}", r)).collect();
+      println!("{:<15} {:<width$} {}", address, name, result.join(""), width=hostwidth);
+    }
   }
 }

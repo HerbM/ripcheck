@@ -1,6 +1,6 @@
 [package]
 name    = "ripcheck"
-version = "0.0.10" # Includes arp, better structure & better threading,fixes extra field when no arp
+version = "0.0.11" # Threaded DNS lookups, adds reverse lookups, start MAC vendor lookup
 authors = ["HerbM <HerbMartin@GMail.com>"]
 description = "Fast ARP & TCP Port Checker in Rust"
 edition = "2018"

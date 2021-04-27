@@ -177,6 +177,8 @@ struct CheckConfig<'a> {
   verbose:    bool,
   csvOutput:  bool,
   showheader: bool,
+  reverse:    bool,
+  vendor:     bool,
 }
 
 impl<'a> Default for CheckConfig<'a> {
@@ -190,6 +192,8 @@ impl<'a> Default for CheckConfig<'a> {
       verbose:       false,
       csvOutput:     false,
       showheader:    true,
+      reverse:       false,
+      vendor:        false,
     }
   }
 }
@@ -246,15 +250,17 @@ fn parse_args() -> clap::ArgMatches {
     (about   : crate_description!() )                    // FIXME default_value(LOCALHOST)
     (@arg TARGETS:                                ...                                         "Query targets"                   )
     (@arg HOST:    -e -a --host  {valid_hostname} ... +takes_value                            "Query names or addresses"        )
-    (@arg RANGE:      -r --range {valid_range}    ... +takes_value                            "Query Address ranges"            )
+    (@arg RANGE:      -r --range  {valid_range}   ... +takes_value                            "Query Address ranges"            )
     (@arg CIDR:   -N --net --cidr {valid_cidr}    ... +takes_value                            "Query network ranges"            )
     (@arg FILENAME:   -f --filename    --path         +takes_value                            "Read targets from file(s)"       )
-    (@arg PORT:       -p --port  {valid_port}     ... +takes_value default_value(DEFAULTPORT) "Ports to test"                   )
+    (@arg PORT:       -p --port   {valid_port}    ... +takes_value default_value(DEFAULTPORT) "Ports to test"                   )
     (@arg MAXTHREADS: -m --maxthreads                 +takes_value default_value("4000")      "Maximum thread count"            )
     (@arg DRAIN:      -d --drain                      +takes_value default_value("0")         "Drain threads to N%"             )
     (@arg TIMEOUT: -w -t --timeout     --wait         +takes_value default_value(WAIT)        "Timeout: seconds or milliseconds")
     (@arg NAMESERVER: -n --nameserver  --dns      ... +takes_value                            "Nameservers to use"              )
-    (@arg ARP:        -A --arp --ARP                                                          "ARP to resolve MAC address"      )
+    (@arg ARP:        -A --arp                                                                "ARP to resolve MAC address"      )
+    (@arg REVERSE:    -R --reverse                                                            "Reverse IP to name"      )
+    (@arg VENDOR:     -M --vendor                                                             "Show NIC vendor"      )
     (@arg LOCALDNS:   -l --uselocalDNS --localDNS --uselocal                                  "Also try local DNS resolver"     )
     (@arg VERBOSE:    -v --verbose                                                            "Print verbose information"       )
     (@arg CSVOUT:     -s --csv --csvout                                                       "Output CSV results"              )
@@ -297,6 +303,8 @@ fn main() -> io::Result<()> {
   let showheader:  bool =!MATCHES.is_present("NOHEADER");
   let from_file:   bool = MATCHES.is_present("FILENAME");
   let uselocalDNS: bool = MATCHES.is_present("LOCALDNS");
+  let reverse:     bool = MATCHES.is_present("REVERSE");
+  let vendor:      bool = MATCHES.is_present("VENDOR");
   let MAXTHREADS: usize = match MATCHES.value_of ("MAXTHREADS").unwrap().parse::<usize>().unwrap_or(1024) {
     max if max == 0 => usize::MAX,
     max             => max,
@@ -313,6 +321,8 @@ fn main() -> io::Result<()> {
     verbose,
     showheader,
     csvOutput,
+    reverse,
+    vendor ,
   };
   if false {
     println!("default config: {:#?}", config);
@@ -443,26 +453,7 @@ fn main() -> io::Result<()> {
   let mut targets: Box<Vec<Box<Target>>> = Box::new(Vec::with_capacity(hostcount));
   let mut hostwidth = 20;
   for host in hosts {
-    let ipAddress: String  = match host.as_bytes()[0].is_ascii_digit() {
-      true  => String::from(&host),
-      false => match dnsClient.query_a(&host) {   // TODO improve DNS & multithreading
-        Ok(ipaddr) if ipaddr.len() > 0 => {    // found at least 1 ip
-          let ip = ipaddr[0].to_string();
-          if verbose { println!("ip: {} ipaddr.len {} {:?}", ip, ipaddr.len(), ipaddr)};
-          String::from(ip)
-        },
-        _ if uselocalDNS => {
-          let hostVec: Vec<String> = hostname_to_ipaddress(&host)
-          .filter(|a| a.is_ipv4())
-          .map(|ip| ip.to_string()).collect();
-          match hostVec.get(0) {
-            Some(ip) => ip.to_string().replace(":0", "").replace("0.0.0.0", ""),
-            _  => "".to_string(),
-          }
-        },
-        _ => "".to_string(),
-      }
-    };
+    let ipAddress: String  = "".to_string();
     if false  { println!("host: [{}]", host) };
     if host.len() > hostwidth { hostwidth = host.len() }
     let target = Box::new(Target{
@@ -500,10 +491,12 @@ fn main() -> io::Result<()> {
   for target in targets.into_iter() {
     let portlist = ports.clone();
     let resolver = dnsClient.clone();
+    // let config = &config;
     let t = target;
     threads.push_front(std::thread::spawn(move || {
       test_tcp_portlist(&t, &portlist, timeout,
-        hostwidth, arp, csvOutput, showheader, verbose, &resolver)
+        hostwidth, arp, csvOutput, showheader, verbose, &resolver,
+        uselocalDNS, vendor, reverse)
     }));
     // println!("Does queue need draining? current:{} max:{}", threads.len(), maxthreads);
     if threads.len() > maxthreads {
@@ -533,8 +526,8 @@ fn test_tcp_socket_address(address: &str, port: u16, timeout: Duration, verbose:
 
 fn test_tcp_portlist(target: & Target, ports: &Vec<String>, timeout: Duration,
                       hostwidth: usize, arp:bool, csvOutput:bool, header:bool, verbose:bool,
-                      _dnsclient: &DNSClient) {
-  let address: &str = &target.ipaddress;
+                      dnsclient: &DNSClient, uselocalDNS: bool, vendor: bool, reverse: bool) {
+  // let address: &str = &target.ipaddress;
   let name: &str = &target.hostname;
   let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
   if verbose {
@@ -544,6 +537,27 @@ fn test_tcp_portlist(target: & Target, ports: &Vec<String>, timeout: Duration,
     // https://docs.rs/dns-lookup/1.0.6/dns_lookup/
     println!("Reverse: {:#?}", testname);
   }
+  let address: String  = match name.as_bytes()[0].is_ascii_digit() {
+    true  => String::from(name),
+    false => match dnsclient.query_a(&name) {   // TODO improve DNS & multithreading
+      Ok(ipaddr) if ipaddr.len() > 0 => {    // found at least 1 ip
+        let ip = ipaddr[0].to_string();
+        if verbose { println!("ip: {} ipaddr.len {} {:?}", ip, ipaddr.len(), ipaddr)};
+        String::from(ip)
+      },
+      _ if uselocalDNS => {
+        let hostVec: Vec<String> = hostname_to_ipaddress(&name)
+          .filter(|a| a.is_ipv4())
+          .map(|ip| ip.to_string()).collect();
+        match hostVec.get(0) {
+          Some(ip) => ip.to_string().replace(":0", "").replace("0.0.0.0", ""),
+          _  => "".to_string(),
+        }
+      },
+      _ => "".to_string(),
+    }
+  };
+
   for port in ports.iter() {
     let ip: String = address.to_string();
     let port: u16 = port.parse().unwrap();  // TODO: Works but can simplify u16 and remove this
@@ -551,8 +565,18 @@ fn test_tcp_portlist(target: & Target, ports: &Vec<String>, timeout: Duration,
       test_tcp_socket_address(&ip, port, timeout, verbose)
     }));
   }
+  let name: String  = match name.as_bytes()[0].is_ascii_digit() {
+    true if reverse => {
+      let ip = name.parse().unwrap();
+      dns_lookup::lookup_addr(&ip).unwrap()
+    },
+    _ => name.to_string(),
+  };
   let arpresult: String = if arp {
-    arp_for_MAC(&address)
+    let ar = arp_for_MAC(&address);
+    if vendor {
+      format!("{:<9}", "")
+    } else { format!("{:<18}", ar) }
   } else { "".to_string() };
   if false { println!("arpresult: [{}]", arpresult) };
   let results: Vec<bool> =

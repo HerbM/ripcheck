@@ -20,46 +20,49 @@ use ipnet::*;
 use dnsclient::sync::*;
 // use std::process::Command;
 // use std::io::Command;
+mod mactovendors;
 
 //  TODO  Learn to do Git Merge etc.
 /// DONE: read from file is broken??? Worked for me? Probably due to param parsing & fixed.
 /// should show help for bad input -- later
 /// DONE: fix alignment -- done, more testing
-/// multithreaded DNS fully -- needs restructering
+/// DONE: multithreaded DNS fully -- needs cleanup/simplification
 /// indexing -- easy
 /// fix command line parsing to make it easier - need decision
+///   remove all params for targets and ports, parse for these
+///   leave switches, filenames?, and DNS addresses
 
-/// Working version with ranges, TODO:
 //  DONE  Review Panic with no range -- should be fixed, skipping RANGE if not present in ARGS
 //  FIXME IPv6 basic parsing and checking
 //  FIXME Find and fix error possibilities
 ///   Review section for combinations of command line, STDIN, and File input
 /// DONE: Output CSV etc
 /// DONE:  Add Port RANGES EASY:::::
-///   Reverse DNS??
+/// DONE: Reverse DNS, but slow and needs testing
 ///   Find more host names ? With credentials?
 ///   Add Delay per host, per probe??
-///   Add index option, and maybe sorting???
+///   Add index option, to allow sorting
 ///   Add symbolic names for ports or protocols? Maybe groups like WinTest, LinuxTest, WebServer
 ///   Filtering options? Only with open ports?
 ///  DONE: Arp scan and
-///     Add network card manufacturers????
+///     Add network card manufacturers???? Started, but might be hard /24 /28 /36
 ///     MAC Vendor list: https://gist.github.com/aallan/b4bb86db86079509e6159810ae9bd3e4
+///     Invoke-WebRequest -Uri "https://gitlab.com/wireshark/wireshark/-/raw/master/manuf" -OutFile nicmanuf.txt
 
 ///   FQDN specific DNS server lists?
 ///   Configuration files?  Or syntax in input files?
 ///   Read CSV and structured STDIN
 ///   DONE: Use threads intelligently for large inputs; might need further improvement
 ///   Use output structure and create an output controller
-///   Use struct for CheckConfig and Target
+///   Use struct for CheckConfig and Target, started but needs work
 ///   Add support for Ping, and maybe DNS, HTTP/S, email/SMTP, WinRM??? server checks etc checks
 ///      Maybe other protocols or even some UDP (only does TCP now)
 ///   Continuous monitor and interval, maybe alerts... run programs on UP status change?
 ///   Fix todo items below...
 ///     IpNet = "10.0.0.0/30".parse().unwrap();
 ///     valid_range regex wrong: technically IPv4-IPv6 will match
-///     Fix DNS it's not timing out appropriately
-///     Multi-thread DNS
+///     DONE? Fix DNS it's not timing out appropriately
+///     DONE: Multi-thread DNS
 /*
 Why do we need a queue?
 When “what” displays information about a network address, it would ideally like to display an “easier on the eyes” hostname rather than an IP address (eg. “dns.google” instead of “8.8.8.8”). To do this, it uses libc’s getnameinfo function.
@@ -81,7 +84,7 @@ fn get_nethosts(cidr_string: &str) -> Option<IpAddrRange> {
   }
 }
 
-lazy_static!{static ref VALID_PORTS:  Regex = Regex::new(r"^(\d{1,5}(([-,;]\d{1,5})?))$").unwrap(); }
+lazy_static!{ static ref VALID_PORTS: Regex = Regex::new(r"^(\d{1,5}(([-,;]\d{1,5})?))$").unwrap(); }
 lazy_static!{ static ref SPLIT_PORTS: Regex = Regex::new(r"[-,;]+").unwrap(); }
 
 fn valid_port(portname: &str) -> Result<(), String> {
@@ -200,10 +203,10 @@ impl<'a> Default for CheckConfig<'a> {
 
 #[derive(Debug)]
 struct Target {
-  hostname: String,
-  ipaddress: String,
-  socketaddrs: std::vec::IntoIter<SocketAddr>,
-  reachable: Vec<bool>,
+  hostname    : String,
+  ipaddress   : String,
+  socketaddrs : std::vec::IntoIter<SocketAddr>,
+  reachable   : Vec<bool>,
 }
 
 impl Default for Target {
@@ -466,28 +469,29 @@ fn main() -> io::Result<()> {
   }
   // let all_fail   = vec!["false"; port_count].join("\t");   // TODO: Add SomeOpen ???? column
   if showheader || csvOutput {
-    let port_count = ports.len();
-    if verbose { println!("port_count: {}", port_count); }
+    // let port_count = ports.len();
     let portsref = &ports;
-    let arpheader = match arp {
-      true if csvOutput => ",MAC_ADDRESS",
-      true              => "MAC_ADDRESS       ",
-      _                 => ""
-    };
-    if csvOutput {
-      let port_names: String =
-        portsref.into_iter().map(|p| format!(",Port{}", p)).collect();
-      println!("{},{}{}{}", "IPAddress", "Host", arpheader, port_names);
-    } else if showheader {
-      let port_names: String =
-        portsref.into_iter().map(|p| format!(" Port{:<5}", p)).collect();
-      println!("{:<15} {:<width$} {}{}", "IPAddress", "Host", arpheader, port_names, width=hostwidth);
+    let widthfactor: usize = if csvOutput { 0 }   else { 1 };
+    let separator: &str    = if csvOutput { "," } else { "" };
+    let mut headers: Vec<String> = Vec::with_capacity(ports.len()+8);
+    headers.push(format!("{:<width$}", "IPAddress", width=widthfactor * 16));
+    headers.push(format!("{:<width$}", "Hostname",  width=widthfactor * 31));  // TODO: FIX WITH HOSTWIDTH
+    if arp {
+      headers.push(format!("{:<width$}", "MACaddress", width=19 * widthfactor));
+      if vendor { headers.push(format!("{:<width$}", "MACvendor", width=10 * widthfactor)) };
     }
+    for p in portsref {
+      let portname = format!("Port{}", p);
+      headers.push(format!("{:<width$}", portname, width=(portname.len()+1)*widthfactor));
+    }
+    // let header = headers.join(separator);
+    println!("{}", headers.join(separator)); // , separator, portnames);
   }
-  let maxthreads = MAXTHREADS / (ports.len() + 1);
+
+  let maxthreads = MAXTHREADS / (ports.len() + 2);
   let maxthreads = if maxthreads <  1 {  1 } else { maxthreads };
   if verbose { println!("maxthreads: {}  from MAXTHREADS: {}", maxthreads, MAXTHREADS) };
-  let mut threads: VecDeque<std::thread::JoinHandle<()>> = VecDeque::with_capacity(hostcount);
+  let mut threads: VecDeque<std::thread::JoinHandle<()>> = VecDeque::with_capacity(maxthreads);
   for target in targets.into_iter() {
     let portlist = ports.clone();
     let resolver = dnsClient.clone();
@@ -519,10 +523,6 @@ fn test_tcp_socket_address(address: &str, port: u16, timeout: Duration, verbose:
     _ => false
   }
 }
-
-//  Fix extra field when not ARPING
-//
-//
 
 fn test_tcp_portlist(target: & Target, ports: &Vec<String>, timeout: Duration,
                       hostwidth: usize, arp:bool, csvOutput:bool, header:bool, verbose:bool,
@@ -558,6 +558,13 @@ fn test_tcp_portlist(target: & Target, ports: &Vec<String>, timeout: Duration,
     }
   };
 
+  let reversethread: Option<std::thread::JoinHandle<String>> =
+    if reverse && name.as_bytes()[0].is_ascii_digit() {
+      let ip = name.parse().unwrap();
+      Some(std::thread::spawn(move || -> String {
+        dns_lookup::lookup_addr(&ip).unwrap()
+      }))
+    } else { None };
   for port in ports.iter() {
     let ip: String = address.to_string();
     let port: u16 = port.parse().unwrap();  // TODO: Works but can simplify u16 and remove this
@@ -565,47 +572,32 @@ fn test_tcp_portlist(target: & Target, ports: &Vec<String>, timeout: Duration,
       test_tcp_socket_address(&ip, port, timeout, verbose)
     }));
   }
-  let name: String  = match name.as_bytes()[0].is_ascii_digit() {
-    true if reverse => {
-      let ip = name.parse().unwrap();
-      dns_lookup::lookup_addr(&ip).unwrap()
-    },
-    _ => name.to_string(),
-  };
-  let arpresult: String = if arp {
-    let ar = arp_for_MAC(&address);
-    if vendor {
-      format!("{:<9}", "")
-    } else { format!("{:<18}", ar) }
-  } else { "".to_string() };
-  if false { println!("arpresult: [{}]", arpresult) };
+  let widthfactor: usize = if csvOutput { 0 }   else { 1 };
+  let separator: &str    = if csvOutput { "," } else { "" };
+  let mut output: Vec<String> = Vec::with_capacity(ports.len()+8);
   let results: Vec<bool> =
     threads.into_iter()
             .map(|t| t.join().unwrap_or(false))
             .collect();
-  if csvOutput {
-    if arp {
-      let result: Vec<String> = results.into_iter().map(|r| format!(",{}", r)).collect();
-      println!("{},{},{}{}", address, name, arpresult, result.join(""));
-    } else {
-      let result: Vec<String> = results.into_iter().map(|r| format!(",{}", r)).collect();
-      println!("{},{}{}", address, name, result.join(""));
-    }
-  } else if header {
-    if arp {
-      let result: Vec<String> = results.into_iter().map(|r| format!(" {:<9}", r)).collect();
-      println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
-    } else {
-      let result: Vec<String> = results.into_iter().map(|r| format!(" {:<9}", r)).collect();
-      println!("{:<15} {:<width$} {}", address, name, result.join(""), width=hostwidth);
-    }
-  } else {
-    if arp {
-      let result: Vec<String> = results.into_iter().map(|r| format!(" {:<6}", r)).collect();
-      println!("{:<15} {:<width$} {:<18}{}", address, name, arpresult, result.join(""), width=hostwidth);
-    } else {
-      let result: Vec<String> = results.into_iter().map(|r| format!(" {:<6}", r)).collect();
-      println!("{:<15} {:<width$} {}", address, name, result.join(""), width=hostwidth);
-    }
+  let name = match reversethread {
+    Some(t) => t.join().unwrap(),
+    _ => name.to_string(),
+  };
+  output.push(format!("{:<width$}", address, width=widthfactor * 16));
+  output.push(format!("{:<width$}", name,    width=widthfactor * 31));
+  if arp {
+    let mac = arp_for_MAC(&address);
+    output.push(format!("{:<width$}", mac, width=19 * widthfactor));
+    if vendor {
+      output.push(format!("{:<width$}", mactovendors::mac_to_vendor(&mac), width=10*widthfactor))
+    };
   }
+  let mut r = results.iter();
+  for p in ports {
+    let portname = format!("Port{}", p);
+    let namelength = portname.len();
+    let w = if header { namelength + 1 }  else { 6 };
+    output.push(format!("{:<width$}", r.next().unwrap(), width= w * widthfactor));
+  }
+  println!("{}", output.join(separator));
 }

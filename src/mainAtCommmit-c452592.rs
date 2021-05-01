@@ -60,7 +60,7 @@ https://www.poor.dev/posts/what-job-queue/
  */
 
 pub const STDIN_FILENO: i32 = 0;
-static DEFAULTDNSSERVERS: [&'static str; 2] = ["103.86.99.99", "103.86.96.96"];
+static DEFAULTDNSSERVERS: [&str; 2] = ["103.86.99.99", "103.86.96.96"];
 fn get_dnsserver() -> [&'static str; 2] { DEFAULTDNSSERVERS }
 fn piped_input() -> bool { unsafe { libc::isatty(STDIN_FILENO as i32) == 0 } }
 
@@ -339,7 +339,7 @@ fn main() -> io::Result<()> {
     hosts.extend( MATCHES.values_of("HOST").unwrap().map(|s| s.to_string()));
   }
   // WORKING: Fix range not printing
-  if verbose { println!("Line:{} {}", line!(), "MATCHES.is_present(\"RANGE\")" );}
+  if verbose { println!("Line:{} MATCHES.is_present(\"RANGE\")", line!());}
   let mut ranges: Vec<String>   = vec![];
   if MATCHES.is_present("RANGE") {
     ranges.extend(MATCHES.values_of("RANGE").unwrap().map(|s| s.to_string()));
@@ -438,10 +438,10 @@ fn main() -> io::Result<()> {
     let ipAddress: String  = match host.as_bytes()[0].is_ascii_digit() {
       true  => String::from(&host),
       false => match dnsClient.query_a(&host) {   // TODO DNS needs improvement and multithreading
-        Ok(ipaddr) if ipaddr.len() > 0 => {    // found at least 1 ip
+        Ok(ipaddr) if !ipaddr.is_empty() => {    // found at least 1 ip
           let ip = ipaddr[0].to_string();
           if verbose { println!("ip: {} ipaddr.len {} {:?}", ip, ipaddr.len(), ipaddr)};
-          String::from(ip)
+          ip
         },
         _ if uselocalDNS => {
           let hostVec: Vec<String> = hostname_to_ipaddress(&host)
@@ -478,7 +478,7 @@ fn test_tcp_socket_address(address: &str, port: u16, timeout: Duration) -> bool 
   }
 }
 
-fn test_tcp_portlist(address: &str, name: &str, ports: &Vec<String>,
+fn test_tcp_portlist(address: &str, name: &str, ports: &[String],
                      timeout: Duration, hostwidth: usize) {
   let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
   for port in ports.iter() {

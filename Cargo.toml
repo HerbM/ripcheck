@@ -1,24 +1,29 @@
 [package]
 name    = "ripcheck"
-version = "0.0.12" # Threaded DNS & Rev, Arp, MACVendors, better formatting
+version = "0.0.14" # Threaded DNS & Rev, Arp, MACVendors pfh, better formatting, timings
 authors = ["HerbM <HerbMartin@GMail.com>"]
 description = "Fast ARP & TCP Port Checker in Rust"
 edition = "2018"
 
+[profile.release]
+# debug = true
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-libc = "0.2.93"
+libc = "0.2.94"
 clap = "3.0.0-beta.2"
 clap_generate = "3.0.0-beta.2"
 cfile = "0.5.1"
 ipconfig = "0.2.2"
 lazy_static = "1.4.0"
-regex = "1.4.5"
+regex = "1.4.6"
 dnsclient = { git = "https://github.com/jedisct1/rust-dnsclient" }
 dns-lookup = "1.0.6"
 ipnet = "2.3.0"
 systemstat = "0.1.7"
+phf = { version = "0.8.0", features = ["macros"] }
+thread-id = "4.0.0"
 # resolve = "0.2.0"
 # sys-info = "0.9"
 

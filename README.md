@@ -1,8 +1,8 @@
 # ***ripcheck***
 
-## **Fast ARP &amp; TCP Port Checker in Rust version 0.0.14**
+## **Fast ARP &amp; TCP Port Checker in Rust version 0.0.15**
 
-*ripcheck* v0.0.14 is now a beta version, and is my first project as a beginner using Rust.
+*ripcheck* v0.0.15 is now a beta version, and is my first project as a beginner using Rust.
 
 It has only been tested on Windows, though it will eventually run on Linux etc.
 
@@ -12,18 +12,23 @@ It has only been tested on Windows, though it will eventually run on Linux etc.
 
     It may use:
 
-    Number of Hosts * Number of Ports being checked + 1 ARP + 1 Reverse DNS.
+    Hosts * Ports being checked + 1 ARP + 1 Reverse DNS + 1 control thread:
+    Hosts * (Ports + 3) unless you set a maximum thread count.
 
-    A /24 bit network will require about 1250 threads to check 3 ports plus ARP and Reverse DNS
+    A /24 bit network will require about 1500 threads to check 3 ports plus ARP and Reverse DNS
 
-Expect the parameters names and usage to change since it is currently more complicated than necessary.
+### Changes to parameter requirements
+Several of the parameters names are no longers required for: ips, Ranges, & cidr nets
+The parameters are still legal but may may be removed in the future.
+It was complicated than necessary and is now far more ergonomic.
+Expect future changes.
 
 ### DNS, ARP, reverse DNS, and port checks are now separately threaded.
 
-### MAC Vendor lookups are using the (excellent) phf
+### MAC Vendor lookups are using the (excellent) phf crate
 
 ### MAC to vendor table
-https://gitlab.com/wireshark/wireshark/-/raw/master/manuf   (42,562 entries)
+https://gitlab.com/wireshark/wireshark/-/raw/master/manuf   (42,562 entries 2021-05-01)
 
 ### Example:
 ```

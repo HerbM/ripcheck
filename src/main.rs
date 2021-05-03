@@ -495,10 +495,9 @@ fn main() -> io::Result<()> {
   hosts.extend(MATCHES.values_of("RANGE")
        .unwrap_or(Default::default())
        .flat_map(|r| get_range(&r)).into_iter()  );
-  if let Some(nets) = MATCHES.values_of("CIDR") {
-    for net in nets {
-      hosts.extend(get_nethosts(net).unwrap().map(|h| h.to_string())) };
-  }
+  hosts.extend(MATCHES.values_of("CIDR")
+       .unwrap_or(Default::default())
+       .flat_map(|net| get_nethosts(&net).unwrap().map(|h| h.to_string())));
   if verbose { println!("Ln:{} hosts:{:?}", line!(), hosts) };
 
   // TODO review next session to ensure we allow all reasonable combinations of host entry
@@ -510,9 +509,7 @@ fn main() -> io::Result<()> {
   if piped_input() {   // TODO works but only accepts host list, what if structured or CSV etc.???
     let input = io::stdin();
     let input = input.lock();
-    for line in input.lines().flatten() {
-      hosts.push(line);
-    }
+    for line in input.lines().flatten() { hosts.push(line); }
   }
   // NEW FILE VERSION
   /*

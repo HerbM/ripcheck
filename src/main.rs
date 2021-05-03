@@ -426,7 +426,6 @@ fn main() -> io::Result<()> {
     reverse,
     vendor ,
   };
-  let notpresent: clap::Values = Default::default();
   fn get_portnumbers(portarg:&str) -> Vec<String> {   //
     let mut range = SPLIT_PORTS.splitn(portarg, 2);// {
     let start: u32 = range.next().unwrap().parse().unwrap();
@@ -452,31 +451,7 @@ fn main() -> io::Result<()> {
     if portlist.is_empty() { vec![DEFAULTPORT.to_string()] }
     else                   { portlist }
   }
-  // fn get_portlist(matches: &MATCHES) -> Vec<String> {   //
-  //   matches.values_of("PORT")
-  //          .unwrap_or(Default::default())
-  //          .chain(matches.values_of("TARGETS")
-  //                 .unwrap_or(Default::default())
-  //                 .filter(|p| valid_port(p).is_ok()))
-  //          .flat_map(|portarg| get_portnumbers(&portarg))
-  //          .collect()   // get the u16 values
-  // }
-//  let mut ports: Vec<String> = get_portlist(&MATCHES).into_iter()
-//    .chain(MATCHES.values_of("TARGETS").unwrap_or(Default::default()))
-//    .filter(|p| valid_port(p).is_ok()).flat_map(|p| get_portnumbers(p));
   let ports: Vec<String> = get_portlist(&MATCHES);
-  // ports.extend(
-  //   MATCHES.values_of("TARGETS").unwrap_or(Default::default())
-  //   .filter(|p| valid_port(p).is_ok()).flat_map(|p| get_portnumbers(p))
-  // );
-  // if let Some(targets) = MATCHES.values_of("TARGETS") {
-  //   for p in targets {
-  //     if let Ok(()) = valid_port(p) {
-  //       ports.extend(get_portnumbers(p).into_iter());
-  //     }
-  //   };
-  // }
-
   if verbose {
     let testAddress =
     hostname_to_ipaddress("hamachi").filter(|a| a.is_ipv4());
@@ -514,16 +489,12 @@ fn main() -> io::Result<()> {
       }
     };
   }
-  hosts.extend(MATCHES.values_of("HOST").unwrap_or(notpresent).map(|s| s.to_string()));
-  // if let Some(hs) = MATCHES.values_of("HOST") {
-  //   hosts.extend( hs.map(|s| s.to_string()));
-  // }
-  if let Some(ranges) = MATCHES.values_of("RANGE") {
-    for r in ranges {
-      if verbose { println!("ranges: {:?}", r); }
-      hosts.extend(get_range(&r));
-    }
-  }
+  hosts.extend(MATCHES.values_of("HOST")
+       .unwrap_or(Default::default())
+       .map(|s| s.to_string()));
+  hosts.extend(MATCHES.values_of("RANGE")
+       .unwrap_or(Default::default())
+       .flat_map(|r| get_range(&r)).into_iter()  );
   if let Some(nets) = MATCHES.values_of("CIDR") {
     for net in nets {
       hosts.extend(get_nethosts(net).unwrap().map(|h| h.to_string())) };

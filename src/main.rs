@@ -241,6 +241,7 @@ struct CheckConfig<'a> {
   // dnsserverlist: Vec<&'a str>,
   testports:  Vec<&'a str>,
   verbose:    bool,
+  timing:     bool,
   csvOutput:  bool,
   showheader: bool,
   reverse:    bool,
@@ -257,6 +258,7 @@ impl<'a> Default for CheckConfig<'a> {
       // dnsserverlist: vec![],
       testports:     vec!["80", "135","445"],  //    .to_string()
       verbose:       false,
+      timing:        false,
       csvOutput:     false,
       showheader:    true,
       arp:           false,
@@ -345,6 +347,7 @@ fn parse_args() -> clap::ArgMatches {
     (@arg VERBOSE:    -v --verbose                                                          "Print verbose information"       )
     (@arg CSVOUT:     -s --csv --csvout                                                     "Output CSV results"              )
     (@arg NOHEADER:   -o --noheader --omit                                                  "Omit header from output"         )
+    (@arg TIMING:        --timing   --TIMING         +hidden                                "Output timing trace"         )
   ).get_matches()
 }
 
@@ -445,6 +448,7 @@ lazy_static!{
     testports:   vec!["80", "135","445"],
     arp        : MATCHES.is_present("ARP" ),
     verbose    : MATCHES.is_present("VERBOSE" ),
+    timing     : MATCHES.is_present("TIMING" ),
     csvOutput  : MATCHES.is_present("CSVOUT"  ),
     showheader :!MATCHES.is_present("NOHEADER"),
     uselocalDNS: MATCHES.is_present("LOCALDNS"),
@@ -465,6 +469,7 @@ fn main() -> io::Result<()> {
   let dnsDefaultServers: Vec<_> = separator.split(&out).into_iter().filter(|s| s.len() > 6).collect();
   let arp:         bool = MATCHES.is_present("ARP" );
   let verbose:     bool = MATCHES.is_present("VERBOSE" );
+  let timing:      bool = MATCHES.is_present("TIMING"  );
   let csvOutput:   bool = MATCHES.is_present("CSVOUT"  );
   let showheader:  bool =!MATCHES.is_present("NOHEADER");
   let uselocalDNS: bool = MATCHES.is_present("LOCALDNS");
@@ -478,12 +483,13 @@ fn main() -> io::Result<()> {
   let drain:      usize = MATCHES.value_of ("DRAIN").unwrap().parse::<usize>().unwrap_or(0);
   // let timeout: Duration =
   // if verbose { println!("Ln:{} Duration: {:?}", line!(), timeout); }
-  let config = Box::new(CheckConfig {
+  let _config = Box::new(CheckConfig {
     timeout:     get_timeout(MATCHES.value_of ("TIMEOUT").unwrap().parse::<u64>().unwrap_or(4000)),
     outputType:    OutputType::Table,
     testports:     vec!["80", "135","445"],
     arp        ,
     verbose    ,
+    timing     ,
     csvOutput  ,
     showheader ,
     uselocalDNS,
@@ -529,8 +535,10 @@ fn main() -> io::Result<()> {
 
   let nsAddress: Vec<String> = if MATCHES.is_present("NAMESERVER") {
     MATCHES.values_of("NAMESERVER").unwrap().map(|s| s.to_string()).collect()
-  // } else if !config.dnsserverlist.is_empty() {
-    // config.dnsserverlist.iter().map(|s| s.to_string()).collect()
+  //} else if !dnsserverlist.is_empty() {
+  //  dnsserverlist.iter().map(|s| s.to_string()).collect()
+  } else if !dnsDefaultServers.is_empty() {
+    dnsDefaultServers.iter().map(|s| s.to_string()).collect()
   } else {
     get_dnsserver().iter().map(|s| s.to_string()).collect()
   };
@@ -649,12 +657,10 @@ fn main() -> io::Result<()> {
   for target in targets.into_iter() {
     let portlist = ports.clone();
     let resolver = dnsClient.clone();
-    //let config = config.clone() ;
     // let config = config.clone();
-
     threads.push_front(std::thread::spawn(move || {
       test_tcp_portlist(&target, &portlist,
-        hostwidth, &resolver, &CONFIG)
+        hostwidth, &resolver)
     }));
     // threads.push_front(std::thread::spawn(move || {
     //   test_tcp_portlist(&target, &portlist, timeout,
@@ -684,57 +690,34 @@ fn test_tcp_socket_address(address: &str, port: u16, timeout: Duration, verbose:
 }
 
 
-// fn test_tcp_portlist(target: &Target, ports: &[String], timeout: Duration,
-//                     hostwidth: usize, arp:bool, csvOutput:bool, header:bool, verbose:bool,
-//                     dnsclient: &DNSClient, uselocalDNS: bool, vendor: bool, reverse: bool,
-//                     config: &CheckConfig) {
-fn test_tcp_portlist(target: &Target, ports: &[String],
-                    hostwidth: usize,
-                    dnsclient: &DNSClient,
-                    config: &CheckConfig) {
-  // let address: &str = &target.ipaddress;
-  // verbose:    bool,
-  // csvOutput:  bool,
-  // reverse:    bool,
-  // vendor:     bool,
-
-  let csvOutput   = CONFIG.csvOutput;
-  let vendor      = CONFIG.vendor;
-  let verbose     = CONFIG.verbose;
-  let header      = CONFIG.showheader;
-  let reverse     = CONFIG.reverse;
-  let uselocalDNS = CONFIG.uselocalDNS;
-  let timeout  = CONFIG.timeout;
-  let arp         = CONFIG.arp;
-  let timings     = verbose;
-
+fn test_tcp_portlist(target: &Target, ports: &[String], hostwidth: usize, dnsclient: &DNSClient) {
   let tid = thread_id::get();
   let start = Instant::now();
   let name: &str = &target.hostname;
   let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
-  if verbose {
+  if CONFIG.verbose {
     let test = "142.250.68.164";
     let ip: std::net::IpAddr = test.parse().unwrap();
     let testname = dns_lookup::lookup_addr(&ip).unwrap();
     // https://docs.rs/dns-lookup/1.0.6/dns_lookup/
     println!("Reverse: {:#?}", testname);
   }
-  if timings { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} START_RESOLVE", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} START_RESOLVE", tid, line!(), start.elapsed().as_secs_f32(), name); }
   let address: String  = match name.as_bytes()[0].is_ascii_digit() {
     true  => String::from(name),
     false => match dnsclient.query_a(&name) {   // TODO improve DNS & multithreading
       Ok(ipaddr) if !ipaddr.is_empty() => {    // found at least 1 ip
         let ip = ipaddr[0].to_string();
-        if verbose { println!("ip: {} ipaddr.len {} {:?}", ip, ipaddr.len(), ipaddr)};
+        if CONFIG.verbose { println!("ip: {} ipaddr.len {} {:?}", ip, ipaddr.len(), ipaddr)};
         // let duration = start.elapsed().as_secs_f32();
-        if timings { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16}", tid, line!(), start.elapsed().as_secs_f32(), name); }
+        if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16}", tid, line!(), start.elapsed().as_secs_f32(), name); }
         ip
       },
-      _ if uselocalDNS => {
+      _ if CONFIG.uselocalDNS => {
         let hostVec: Vec<String> = hostname_to_ipaddress(&name)
           .filter(|a| a.is_ipv4())
           .map(|ip| ip.to_string()).collect();
-        if timings { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16}", tid, line!(), start.elapsed().as_secs_f32(), name); }
+        if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16}", tid, line!(), start.elapsed().as_secs_f32(), name); }
         match hostVec.get(0) {
           Some(ip) => ip.to_string().replace(":0", "").replace("0.0.0.0", ""),
           _  => "".to_string(),
@@ -743,64 +726,66 @@ fn test_tcp_portlist(target: &Target, ports: &[String],
       _ => "".to_string(),
     }
   };
-  if timings { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} ARP_SPAWN", tid, line!(), start.elapsed().as_secs_f32(), name); }
-  let arpthread: Option<std::thread::JoinHandle<String>> = if arp && !address.is_empty() {
+  if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} ARP_SPAWN", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  let arpthread: Option<std::thread::JoinHandle<String>> = if CONFIG.arp && !address.is_empty() {
     let address = address.to_string();
     Some(std::thread::spawn(move || -> String {
       arp_for_MAC(&address)      }))
   } else { None };
-  if timings { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} REV_SPAWN", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} REV_SPAWN", tid, line!(), start.elapsed().as_secs_f32(), name); }
   let reversethread: Option<std::thread::JoinHandle<String>> =
-    if reverse && name.as_bytes()[0].is_ascii_digit() {
+    if CONFIG.reverse && name.as_bytes()[0].is_ascii_digit() {
       let ip = name.to_string();
       Some(std::thread::spawn(move || -> String {
         let ip = ip.parse().unwrap();
         dns_lookup::lookup_addr(&ip).unwrap()
       }))
     } else { None };
-  if timings { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} PORT_SPAWN", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} PORT_SPAWN", tid, line!(), start.elapsed().as_secs_f32(), name); }
   for port in ports.iter() {
     let ip: String = address.to_string();
     let port: u16 = port.parse().unwrap();  // TODO: Works but can simplify u16 and remove this
     threads.push(std::thread::spawn(move || -> bool {
-      test_tcp_socket_address(&ip, port, timeout, verbose)
+      test_tcp_socket_address(&ip, port, CONFIG.timeout, CONFIG.verbose)
     }));
   }
-  if timings { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} PORT_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
-  let widthfactor: usize = if csvOutput { 0 }   else { 1 };
-  let separator: &str    = if csvOutput { "," } else { "" };
+  if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} PORT_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  let widthfactor: usize = if CONFIG.csvOutput { 0 }   else { 1 };
+  let separator: &str    = if CONFIG.csvOutput { "," } else { "" };
   let mut output: Vec<String> = Vec::with_capacity(ports.len()+8);
   let results: Vec<bool> =
     threads.into_iter()
             .map(|t| t.join().unwrap_or(false))
             .collect();
-  if timings { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} REV_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} REV_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
   let name = match reversethread {
     Some(t) => t.join().unwrap(),
     _ => name.to_string(),
   };
   output.push(format!("{:<width$}", address, width=widthfactor * 16));
   output.push(format!("{:<width$}", name,    width=widthfactor * std::cmp::max(31, hostwidth)));
-  if timings { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} ARP_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
-  if arp {
+  if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} ARP_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  if CONFIG.arp {
     let mac = match arpthread {
       Some(t) => t.join().unwrap(),
       _ => "".to_string(),
     };
     // if arp { arp_for_MAC(&address) } else { "".to_string() };
     output.push(format!("{:<width$}", mac, width=19 * widthfactor));
-    if vendor {
+    if CONFIG.vendor {
       output.push(format!("{:<width$}", mactovendors::mac_to_vendor(&mac), width=10*widthfactor))
     };
   }
-  if timings { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} ALL_JOINS_COMPLETE", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} ALL_JOINS_COMPLETE", tid, line!(), start.elapsed().as_secs_f32(), name); }
   let mut r = results.iter();
   for p in ports {
     let portname = format!("Port{}", p);
     let namelength = portname.len();
-    let w = if header { namelength + 1 }  else { 6 };
+    let w = if CONFIG.showheader { namelength + 1 }  else { 6 };
     output.push(format!("{:<width$}", r.next().unwrap(), width= w * widthfactor));
   }
-  if timings { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} OUTPUT", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  if CONFIG.timing {
+    eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} OUTPUT", tid, line!(), start.elapsed().as_secs_f32(), name);
+  }
   println!("{}", output.join(separator));
 }

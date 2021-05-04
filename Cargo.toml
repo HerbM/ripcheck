@@ -5,7 +5,7 @@ authors = ["HerbM <HerbMartin@GMail.com>"]
 description = "Fast ARP & TCP Port Checker in Rust"
 edition = "2018"
 
-[profile.release]
+# [profile.release]
 # debug = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -24,9 +24,9 @@ ipnet = "2.3.0"
 systemstat = "0.1.7"
 phf = { version = "0.8.0", features = ["macros"] }
 thread-id = "4.0.0"
+# fs = "0.0.5"
 # resolve = "0.2.0"
 # sys-info = "0.9"
-
 
 # prettytable-rs = "^0.8"
 # log = "0.4.*"

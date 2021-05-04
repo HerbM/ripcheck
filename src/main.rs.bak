@@ -112,18 +112,8 @@ lazy_static!{static ref VALIDATE_IP_RANGE: Regex = Regex::new(
 ).unwrap();}
 lazy_static!{static ref ALPHA_2_CHARS: Regex = Regex::new(r"[a-zA-Z].|.[a-zA-Z]").unwrap();}
 lazy_static!{static ref MACADDRESS: Regex = Regex::new(r"\b(?im:(([\da-f]{2}-){5}[\da-f]{2}))\b").unwrap();}
-lazy_static!{static ref VALID_HOSTNAME: Regex = Regex::new(r"^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$").unwrap();}
-lazy_static!{static ref VALID_NETBIOS_NAME: Regex = Regex::new(r"^[\\w!@#$%^()'-\\{}\\.~]{1,15}$").unwrap();}
 
-// fn valid_host(hostname: &str) -> Result<(), String> {
-//   if  match_ipv4(hostname) | match_ipv6(hostname) {
-//     Ok(())
-//   } else {
-//     valid_hostname(hostname)
-//   }
-// }
-
-fn _valid_hostname(name: &str) -> Result<(), String> {
+fn valid_hostname(name: &str) -> Result<(), String> {
   match ALPHA_2_CHARS.is_match(name) {
     true  => Ok(()),
     false =>
@@ -142,14 +132,14 @@ fn valid_host(ipstring: &str) -> Result<(), String> {
   }
 }
 
+
 fn parse_range(range: &str) -> Vec<String> {
   range.split('-').map(|b| b.to_string()).collect()
 }
 
-
 fn valid_range(range: &str) -> Result<(), String> {
   let INVALID_MESSAGE = format!(
-    "IP Range [{}] is invalid. Expected: IPAddress-IPAddress (separated by a dash)", range);
+    "IP Range [{}] is invalid. Format is: IPAddress-IPAddress (separated by a dash)", range);
   let parts: Vec<&str> = range.split('-').collect();
   match parts.len() {
     2 => {
@@ -225,7 +215,7 @@ fn _ipv4Addr_to_u32(ipaddress: Ipv4Addr) -> u32 {
   ipaddress.octets().iter().fold(0,|acc, oct| (acc << 8) + *oct as u32)
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 enum OutputType {
   Table,
   _CSV,
@@ -233,33 +223,31 @@ enum OutputType {
   _XML,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct CheckConfig<'a> {
-  uselocalDNS: bool,
+  useDNSdirect: bool,
   timeout: Duration,
   outputType: OutputType,
-  // dnsserverlist: Vec<&'a str>,
+  dnsserverlist: Vec<&'a str>,
   testports:  Vec<&'a str>,
   verbose:    bool,
   csvOutput:  bool,
   showheader: bool,
   reverse:    bool,
-  arp:        bool,
   vendor:     bool,
 }
 
 impl<'a> Default for CheckConfig<'a> {
   fn default() -> CheckConfig<'a> {
     CheckConfig {
-      uselocalDNS:  false,
+      useDNSdirect:  false,
       timeout:       Duration::new(3, 0),
       outputType:    OutputType::Table,
-      // dnsserverlist: vec![],
+      dnsserverlist: vec![],
       testports:     vec!["80", "135","445"],  //    .to_string()
       verbose:       false,
       csvOutput:     false,
       showheader:    true,
-      arp:           false,
       reverse:       false,
       vendor:        false,
     }
@@ -438,21 +426,6 @@ fn valid_file(path: &str) -> Result<(),String> {
   //   _     => Err(),
   // }
 //}
-lazy_static!{
-  static ref  CONFIG: Box<CheckConfig<'static>> = Box::new(CheckConfig {
-    timeout:     get_timeout(MATCHES.value_of ("TIMEOUT").unwrap().parse::<u64>().unwrap_or(4000)),
-    outputType:  OutputType::Table,
-    testports:   vec!["80", "135","445"],
-    arp        : MATCHES.is_present("ARP" ),
-    verbose    : MATCHES.is_present("VERBOSE" ),
-    csvOutput  : MATCHES.is_present("CSVOUT"  ),
-    showheader :!MATCHES.is_present("NOHEADER"),
-    uselocalDNS: MATCHES.is_present("LOCALDNS"),
-    reverse    : MATCHES.is_present("REVERSE"),
-    vendor     : MATCHES.is_present("VENDOR"),
-    // dnsserverlist: dnsDefaultServers,
-  });
-}
 
 // lazy_static!{static ref DEFAULTDNSSERVERS:Vec<&'static str> = getDefaultDNSServers();}
 fn main() -> io::Result<()> {
@@ -467,30 +440,30 @@ fn main() -> io::Result<()> {
   let verbose:     bool = MATCHES.is_present("VERBOSE" );
   let csvOutput:   bool = MATCHES.is_present("CSVOUT"  );
   let showheader:  bool =!MATCHES.is_present("NOHEADER");
+  let from_file:   bool = MATCHES.is_present("FILENAME");
   let uselocalDNS: bool = MATCHES.is_present("LOCALDNS");
   let reverse:     bool = MATCHES.is_present("REVERSE");
   let vendor:      bool = MATCHES.is_present("VENDOR");
-  let from_file:   bool = MATCHES.is_present("FILENAME");
   let MAXTHREADS: usize = match MATCHES.value_of ("MAXTHREADS").unwrap().parse::<usize>().unwrap_or(1024) {
     max if max == 0 => usize::MAX,
     max             => max,
   };
   let drain:      usize = MATCHES.value_of ("DRAIN").unwrap().parse::<usize>().unwrap_or(0);
-  // let timeout: Duration =
-  // if verbose { println!("Ln:{} Duration: {:?}", line!(), timeout); }
-  let config = Box::new(CheckConfig {
-    timeout:     get_timeout(MATCHES.value_of ("TIMEOUT").unwrap().parse::<u64>().unwrap_or(4000)),
+  let timeout: Duration =
+    get_timeout(MATCHES.value_of ("TIMEOUT").unwrap().parse::<u64>().unwrap_or(4000));
+  if verbose { println!("Ln:{} Duration: {:?}", line!(), timeout); }
+  let config = CheckConfig {
+    useDNSdirect:  false,
+    timeout,
     outputType:    OutputType::Table,
+    dnsserverlist: dnsDefaultServers,
     testports:     vec!["80", "135","445"],
-    arp        ,
-    verbose    ,
-    csvOutput  ,
-    showheader ,
-    uselocalDNS,
-    reverse    ,
-    vendor     ,
-    // dnsserverlist: dnsDefaultServers,
-  });
+    verbose,
+    showheader,
+    csvOutput,
+    reverse,
+    vendor ,
+  };
   fn get_portnumbers(portarg:&str) -> Vec<String> {   //
     let mut range = SPLIT_PORTS.splitn(portarg, 2);// {
     let start: u32 = range.next().unwrap().parse().unwrap();
@@ -529,12 +502,12 @@ fn main() -> io::Result<()> {
 
   let nsAddress: Vec<String> = if MATCHES.is_present("NAMESERVER") {
     MATCHES.values_of("NAMESERVER").unwrap().map(|s| s.to_string()).collect()
-  // } else if !config.dnsserverlist.is_empty() {
-    // config.dnsserverlist.iter().map(|s| s.to_string()).collect()
+  } else if !config.dnsserverlist.is_empty() {
+    config.dnsserverlist.iter().map(|s| s.to_string()).collect()
   } else {
     get_dnsserver().iter().map(|s| s.to_string()).collect()
   };
-  // if verbose { for dnsServer in config.dnsserverlist { println!("{}", dnsServer); } }
+  if verbose { for dnsServer in config.dnsserverlist { println!("{}", dnsServer); } }
   let nsSocket: Vec<SocketAddr> =
     nsAddress.iter().filter_map(|ns| format!("{}:53", ns).parse::<SocketAddr>().ok()).collect();
   let dnsServers =
@@ -649,18 +622,12 @@ fn main() -> io::Result<()> {
   for target in targets.into_iter() {
     let portlist = ports.clone();
     let resolver = dnsClient.clone();
-    //let config = config.clone() ;
-    // let config = config.clone();
-
+    // let config = &config;
     threads.push_front(std::thread::spawn(move || {
-      test_tcp_portlist(&target, &portlist,
-        hostwidth, &resolver, &CONFIG)
+      test_tcp_portlist(&target, &portlist, timeout,
+        hostwidth, arp, csvOutput, showheader, verbose, &resolver,
+        uselocalDNS, vendor, reverse)
     }));
-    // threads.push_front(std::thread::spawn(move || {
-    //   test_tcp_portlist(&target, &portlist, timeout,
-    //     hostwidth, arp, csvOutput, showheader, verbose, &resolver,
-    //     uselocalDNS, vendor, reverse, &config)
-    // }));
     // println!("Does queue need draining? current:{} max:{}", threads.len(), maxthreads);
     if threads.len() > maxthreads {
       // println!("Draining queue: current:{} max:{}", threads.len(), maxthreads);
@@ -684,30 +651,11 @@ fn test_tcp_socket_address(address: &str, port: u16, timeout: Duration, verbose:
 }
 
 
-// fn test_tcp_portlist(target: &Target, ports: &[String], timeout: Duration,
-//                     hostwidth: usize, arp:bool, csvOutput:bool, header:bool, verbose:bool,
-//                     dnsclient: &DNSClient, uselocalDNS: bool, vendor: bool, reverse: bool,
-//                     config: &CheckConfig) {
-fn test_tcp_portlist(target: &Target, ports: &[String],
-                    hostwidth: usize,
-                    dnsclient: &DNSClient,
-                    config: &CheckConfig) {
+fn test_tcp_portlist(target: &Target, ports: &[String], timeout: Duration,
+                    hostwidth: usize, arp:bool, csvOutput:bool, header:bool, verbose:bool,
+                    dnsclient: &DNSClient, uselocalDNS: bool, vendor: bool, reverse: bool) {
   // let address: &str = &target.ipaddress;
-  // verbose:    bool,
-  // csvOutput:  bool,
-  // reverse:    bool,
-  // vendor:     bool,
-
-  let csvOutput   = CONFIG.csvOutput;
-  let vendor      = CONFIG.vendor;
-  let verbose     = CONFIG.verbose;
-  let header      = CONFIG.showheader;
-  let reverse     = CONFIG.reverse;
-  let uselocalDNS = CONFIG.uselocalDNS;
-  let timeout  = CONFIG.timeout;
-  let arp         = CONFIG.arp;
-  let timings     = verbose;
-
+  let timings = verbose;
   let tid = thread_id::get();
   let start = Instant::now();
   let name: &str = &target.hostname;

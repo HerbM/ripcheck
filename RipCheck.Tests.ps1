@@ -8,7 +8,7 @@ Describe "RipCheck" {
   }
 }
 
-/*
+<#
 cd D:\Library\Rust\ipcheck\
 D:\Library\Rust\ipcheck\target\release\ripcheck.exe -N 192.168.239.0/24 -p 135 445 -R -A -M | findstr /i "timethis address true -"
 D:\Library\Rust\ipcheck\target\release\ripcheck.exe 192.168.239.15  -p 135 445 -R -A -M | findstr /i "timethis address true -"
@@ -62,4 +62,4 @@ D:\Library\Rust\ipcheck\target\release\ripcheck.exe 135 -N 192.168.239.0/29  -R 
 D:\Library\Rust\ipcheck\target\release\ripcheck.exe 135 -N 192.168.239.0/29  -R -A -M -s 445 # | ConvertFrom-Csv | Where-Object { $_.MacAddress -or $_.Port135 -eq 'true' } | ft -auto
 D:\Library\Rust\ipcheck\target\release\ripcheck.exe 135 -N 192.168.239.0/29  -R -A -M 445 # | ConvertFrom-Csv | Where-Object { $_.MacAddress -or $_.Port135 -eq 'true' } | ft -auto
 
-*/
+#>

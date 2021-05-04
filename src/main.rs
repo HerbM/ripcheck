@@ -24,13 +24,14 @@ use dnsclient::sync::*;
 // use std::io::Command;
 
 //  TODO  Learn to do Git Merge etc.
-/// Improve validation functions, move parsing to functions
-///   Better regexes
-/// fix command line parsing to make it easier - need decision
+/// indexing -- easy
+/// DONE: Improve validation functions
+/// DONE: Move parsing to functions
+/// DONE: Better regexes ???
+/// DONE: fix command line parsing to make it easier
 ///   remove all params for targets and ports, parse for these
 ///   leave switches, filenames?, and DNS addresses
 /// should show help for bad input -- later
-/// indexing -- easy
 
 //  FIXME IPv6 basic parsing and checking
 //  FIXME Find and fix error possibilities
@@ -247,6 +248,7 @@ struct CheckConfig<'a> {
   reverse:    bool,
   arp:        bool,
   vendor:     bool,
+  index:      bool,
 }
 
 impl<'a> Default for CheckConfig<'a> {
@@ -264,6 +266,7 @@ impl<'a> Default for CheckConfig<'a> {
       arp:           false,
       reverse:       false,
       vendor:        false,
+      index:         false,
     }
   }
 }
@@ -283,6 +286,7 @@ impl<'a> Default for CheckConfig<'a> {
 struct Target {
   hostname    : String,
   ipaddress   : String,
+  index       : u32,
   socketaddrs : std::vec::IntoIter<SocketAddr>,
   reachable   : Vec<bool>,
 }
@@ -295,6 +299,7 @@ impl Default for Target {
       hostname    : host.to_string(),
       ipaddress   : "127.0.0.3".to_string(),
       socketaddrs : socket.to_socket_addrs().unwrap(),
+      index       : 0,
       reachable   : Vec::with_capacity(5),
     }
   }
@@ -333,21 +338,22 @@ fn parse_args() -> clap::ArgMatches {
     (@arg TARGETS:                              ...                                         "Query targets"                   )
     (@arg HOST:    -e -a --host   {valid_host}  ... +takes_value                            "Query names or addresses"        )
     (@arg RANGE:      -r --range  {valid_range} ... +takes_value                            "Query Address ranges"            )
-    (@arg CIDR:   -N --net --cidr {valid_cidr}  ... +takes_value                            "Query network ranges"            )
-    (@arg FILENAME:   -f --file --path {valid_file} +takes_value                            "Read targets from file(s)"       )
-    (@arg PORT:       -p --port   {valid_port}  ... +takes_value "Ports to test"                   )
+    (@arg CIDR:   -N --cidr --net {valid_cidr}  ... +takes_value                            "Query network ranges"            )
+    (@arg FILENAME:   -f --path --file {valid_file} +takes_value                            "Read targets from file(s)"       )
+    (@arg PORT:       -p --port   {valid_port}  ... +takes_value                            "Ports to test"                   )
     (@arg MAXTHREADS: -m --maxthreads               +takes_value default_value("4000")      "Maximum thread count"            )
     (@arg DRAIN:      -d --drain                    +takes_value default_value("0")         "Drain threads to N%"             )
-    (@arg TIMEOUT: -w -t --timeout     --wait       +takes_value default_value(WAIT)        "Timeout: seconds or milliseconds")
+    (@arg TIMEOUT: -w -t --wait --timeout           +takes_value default_value(WAIT)        "Timeout: seconds or milliseconds")
     (@arg NAMESERVER: -n --nameserver  --dns    ... +takes_value                            "Nameservers to use"              )
+    (@arg INDEX:      -i --INDEX --index                                                    "Add index column"      )
     (@arg ARP:        -A --arp                                                              "ARP to resolve MAC address"      )
     (@arg REVERSE:    -R --reverse                                                          "Reverse IP to name"      )
     (@arg VENDOR:     -M --vendor                                                           "Show NIC vendor"      )
     (@arg LOCALDNS:   -l --uselocalDNS --localDNS --uselocal                                "Also try local DNS resolver"     )
     (@arg VERBOSE:    -v --verbose                                                          "Print verbose information"       )
-    (@arg CSVOUT:     -s --csv --csvout                                                     "Output CSV results"              )
-    (@arg NOHEADER:   -o --noheader --omit                                                  "Omit header from output"         )
-    (@arg TIMING:        --timing   --TIMING         +hidden                                "Output timing trace"         )
+    (@arg CSVOUT:     -s --csvout --csv                                                     "Output CSV results"              )
+    (@arg NOHEADER:   -o --omit   --noheader                                                "Omit header from output"         )
+    (@arg TIMING:    --TIMING     --timing           +hidden                                "Output timing trace"         )
   ).get_matches()
 }
 
@@ -454,6 +460,7 @@ lazy_static!{
     uselocalDNS: MATCHES.is_present("LOCALDNS"),
     reverse    : MATCHES.is_present("REVERSE"),
     vendor     : MATCHES.is_present("VENDOR"),
+    index      : MATCHES.is_present("INDEX"),
     // dnsserverlist: dnsDefaultServers,
   });
 }
@@ -475,6 +482,7 @@ fn main() -> io::Result<()> {
   let uselocalDNS: bool = MATCHES.is_present("LOCALDNS");
   let reverse:     bool = MATCHES.is_present("REVERSE");
   let vendor:      bool = MATCHES.is_present("VENDOR");
+  let index:       bool = MATCHES.is_present("INDEX");
   let from_file:   bool = MATCHES.is_present("FILENAME");
   let MAXTHREADS: usize = match MATCHES.value_of ("MAXTHREADS").unwrap().parse::<usize>().unwrap_or(1024) {
     max if max == 0 => usize::MAX,
@@ -495,6 +503,7 @@ fn main() -> io::Result<()> {
     uselocalDNS,
     reverse    ,
     vendor     ,
+    index      ,
     // dnsserverlist: dnsDefaultServers,
   });
   fn get_portnumbers(portarg:&str) -> Vec<String> {   //
@@ -617,13 +626,16 @@ fn main() -> io::Result<()> {
   let hostcount = hosts.len();
   let mut targets: Box<Vec<Box<Target>>> = Box::new(Vec::with_capacity(hostcount));
   let mut hostwidth = 20;
+  let mut count = 0u32;
   for host in hosts {
+    count += 1;
     let ipAddress: String  = "".to_string();
     if false  { println!("host: [{}]", host) };
     if host.len() > hostwidth { hostwidth = host.len() }
     let target = Box::new(Target{
       hostname  : host.to_string(),
       ipaddress : ipAddress.to_string(),
+      index     : count,
       reachable : Vec::with_capacity(ports.len()),
       ..Default::default()
     });
@@ -636,6 +648,7 @@ fn main() -> io::Result<()> {
     let widthfactor: usize = if csvOutput { 0 }   else { 1 };
     let separator: &str    = if csvOutput { "," } else { "" };
     let mut headers: Vec<String> = Vec::with_capacity(ports.len()+8);
+    if CONFIG.index { headers.push(format!("{:<width$}", "Index", width=6 * widthfactor)); }
     headers.push(format!("{:<width$}", "IPAddress", width=widthfactor * 16));
     headers.push(format!("{:<width$}", "Hostname",  width=widthfactor * std::cmp::max(31, hostwidth)));  // TODO: FIX WITH HOSTWIDTH
     if arp {
@@ -742,6 +755,7 @@ fn test_tcp_portlist(target: &Target, ports: &[String], hostwidth: usize, dnscli
       }))
     } else { None };
   if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} PORT_SPAWN", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  // TODO: Fixup borrows??
   for port in ports.iter() {
     let ip: String = address.to_string();
     let port: u16 = port.parse().unwrap();  // TODO: Works but can simplify u16 and remove this
@@ -749,22 +763,24 @@ fn test_tcp_portlist(target: &Target, ports: &[String], hostwidth: usize, dnscli
       test_tcp_socket_address(&ip, port, CONFIG.timeout, CONFIG.verbose)
     }));
   }
-  if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} PORT_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} PORT_SPAWNED", tid, line!(), start.elapsed().as_secs_f32(), name); }
   let widthfactor: usize = if CONFIG.csvOutput { 0 }   else { 1 };
   let separator: &str    = if CONFIG.csvOutput { "," } else { "" };
   let mut output: Vec<String> = Vec::with_capacity(ports.len()+8);
-  let results: Vec<bool> =
-    threads.into_iter()
-            .map(|t| t.join().unwrap_or(false))
-            .collect();
+  if CONFIG.index { output.push(format!("{:0>5}{: <width$}", target.index, "", width=widthfactor)); }
+  output.push(format!("{:<width$}", address, width=widthfactor * 16));
+
+  if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} PORT_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  let results: Vec<bool> = threads.into_iter()
+                                  .map(|t| t.join().unwrap_or(false))
+                                  .collect();
   if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} REV_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
   let name = match reversethread {
     Some(t) => t.join().unwrap(),
     _ => name.to_string(),
   };
-  output.push(format!("{:<width$}", address, width=widthfactor * 16));
-  output.push(format!("{:<width$}", name,    width=widthfactor * std::cmp::max(31, hostwidth)));
   if CONFIG.timing { eprintln!("{:010} L{:06} Elapsed: {:>6.3}  {:<16} ARP_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
+  output.push(format!("{:<width$}", name,    width=widthfactor * std::cmp::max(31, hostwidth)));
   if CONFIG.arp {
     let mac = match arpthread {
       Some(t) => t.join().unwrap(),

@@ -2,7 +2,7 @@
 
 ## **Fast ARP &amp; TCP Port Checker in Rust version 0.0.15**
 
-*ripcheck* v0.0.15 is now a beta version, and is my first project as a beginner using Rust.
+*ripcheck* v0.0.16 is now a beta version, and is my first project as a beginner using Rust.
 
 It has only been tested on Windows, though it will eventually run on Linux etc.
 
@@ -17,9 +17,11 @@ It has only been tested on Windows, though it will eventually run on Linux etc.
 
     A /24 bit network will require about 1500 threads to check 3 ports plus ARP and Reverse DNS
 
-### Changes to parameter requirements
-Several of the parameters names are no longers required for: ips, Ranges, & cidr nets
-The parameters are still legal but may may be removed in the future.
+### Added an index option --index to insert a numerical column for later sorting (outside of ripcheck)
+
+### Changes to simplify parameter requirements
+Several of the parameters names are no longer required for: IPs, Ranges, cidr nets, ports
+The parameter names are still accpeted but may may be removed in the future.
 It was complicated than necessary and is now far more ergonomic.
 Expect future changes.
 
@@ -60,7 +62,7 @@ TimeThis :  Elapsed Time :  00:00:05.044```
 
 ### Usage: RipCheck --help
 ```
-ripcheck 0.0.14
+ripcheck 0.0.16
 HerbM <HerbMartin@GMail.com>
 Fast ARP & TCP Port Checker in Rust
 
@@ -72,9 +74,10 @@ ARGS:
 
 FLAGS:
     -A, --arp         ARP to resolve MAC address
-    -s, --csvout      Output CSV results
+    -s, --csv         Output CSV results
+    -i, --index       Add index column
     -l, --uselocal    Also try local DNS resolver
-    -o, --omit        Omit header from output
+    -o, --noheader    Omit header from output
     -R, --reverse     Reverse IP to name
     -M, --vendor      Show NIC vendor
     -v, --verbose     Print verbose information
@@ -82,14 +85,13 @@ FLAGS:
     -V, --version     Prints version information
 
 OPTIONS:
-    -N, --cidr <CIDR>...             Query network ranges
+    -N, --net <CIDR>...              Query network ranges
     -d, --drain <DRAIN>              Drain threads to N% [default: 0]
-    -f, --path <FILENAME>            Read targets from file(s)
+    -f, --file <FILENAME>            Read targets from file(s)
     -a, --host <HOST>...             Query names or addresses
     -m, --maxthreads <MAXTHREADS>    Maximum thread count [default: 4000]
     -n, --dns <NAMESERVER>...        Nameservers to use
-    -p, --port <PORT>...             Ports to test [default: 135]
+    -p, --port <PORT>...             Ports to test
     -r, --range <RANGE>...           Query Address ranges
-    -t, --wait <TIMEOUT>             Timeout: seconds or milliseconds [default: 4000]
+    -t, --timeout <TIMEOUT>          Timeout: seconds or milliseconds [default: 4000]
 ```
-

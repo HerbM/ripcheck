@@ -1,6 +1,7 @@
 [package]
 name    = "ripcheck"
-version = "0.0.15" # Simplified args, Threaded DNS/Rev/Arp/MACVendors/pfh/formatting/timings
+version = "0.0.16"
+# Simplified args, Threaded DNS/Rev/Arp/MACVendors/pfh/formatting/timings
 authors = ["HerbM <HerbMartin@GMail.com>"]
 description = "Fast ARP & TCP Port Checker in Rust"
 edition = "2018"

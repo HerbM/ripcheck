@@ -1,7 +1,6 @@
 [package]
 name    = "ripcheck"
-version = "0.0.16"
-# Simplified args, Threaded DNS/Rev/Arp/MACVendors/pfh/formatting/timings
+version = "0.0.17" # Mostly same as .17 Simplified args, Config, Index,Threaded DNS/Rev/Arp/MACVendors/pfh/formatting/timings
 authors = ["HerbM <HerbMartin@GMail.com>"]
 description = "Fast ARP & TCP Port Checker in Rust"
 edition = "2018"
@@ -18,13 +17,19 @@ clap_generate = "3.0.0-beta.2"
 cfile = "0.5.1"
 ipconfig = "0.2.2"
 lazy_static = "1.4.0"
-regex = "1.4.6"
-dnsclient = { git = "https://github.com/jedisct1/rust-dnsclient" }
+regex = "1.5.3"
+
+dnsclient = "0.1.9"   # { git = "https://github.com/jedisct1/rust-dnsclient" }
+
 dns-lookup = "1.0.6"
-ipnet = "2.3.0"
+
+ipnet = "2.3.*"
+
 systemstat = "0.1.7"
-phf = { version = "0.8.0", features = ["macros"] }
-thread-id = "4.0.0"
+phf = { version = "0.8.*", features = ["macros"] }
+thread-id = "4.0.*"
+num_cpus = "1.13.*"
+
 # fs = "0.0.5"
 # resolve = "0.2.0"
 # sys-info = "0.9"

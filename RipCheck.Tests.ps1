@@ -1,5 +1,17 @@
 BeforeAll {
   ## . $PSCommandPath.Replace('.Tests.ps1', '.ps1')
+  $TestProgram = 'D:\Library\Rust\ipcheck\target\release\ripcheck.exe'
+  & $TestProgram --file .\hostlist.txt -l -t 2  -p 80-88
+  & $TestProgram .\hostlist.txt -l -t 2  -p 80-88
+  & $TestProgram -N 192.168.239.0/28 -p 135-139 445 -R -A -M
+  & $TestProgram 192.168.239.0/28 -p 135-139 445 -R -A -M
+  & $TestProgram 192.168.239.0/28 135-139 445 -RAM
+  & $TestProgram 192.168.239.0/28 135-139 445 -RAMs
+  & $TestProgram 192.168.239.0/28 135-139 445 -RAMs | ConvertFrom-CSV | Format-Table -Auto
+  & $TestProgram 192.168.239.0/28 135-139 -i  -RAMs | ConvertFrom-CSV | Format-Table -Auto
+
+  # hostname
+  # netsh int ip show addr | sls 'IP Address'
 }
 
 Describe "RipCheck" {
@@ -9,12 +21,6 @@ Describe "RipCheck" {
 }
 
 <#
-cd D:\Library\Rust\ipcheck\
-D:\Library\Rust\ipcheck\target\release\ripcheck.exe -N 192.168.239.0/24 -p 135 445 -R -A -M | findstr /i "timethis address true -"
-D:\Library\Rust\ipcheck\target\release\ripcheck.exe 192.168.239.15  -p 135 445 -R -A -M | findstr /i "timethis address true -"
-D:\Library\Rust\ipcheck\target\release\ripcheck.exe 192.168.239.16  -p 135 445 -R -A -M | findstr /i "timethis address true -"
-D:\Library\Rust\ipcheck\target\release\ripcheck.exe -N 192.168.239.0/28 -p 135 445 -R -A -M | findstr /i "timethis address true -"
-D:\Library\Rust\ipcheck\target\release\ripcheck.exe -N 192.168.239.0/24 -p 135 445 -R -A -M 2>t.txt
 D:\Library\Rust\ipcheck\target\release\ripcheck.exe 192.168.239.149 -p 135 445 -R -A -M
 D:\Library\Rust\ipcheck\target\release\ripcheck.exe -N 192.168.239.0/25 -p 135 445 -R -A -M 2>t.txt
 D:\Library\Rust\ipcheck\target\release\ripcheck.exe -N 192.168.239.0/25 -p 135 445 -R -A -M 2>t.txt >$Null

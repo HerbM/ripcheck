@@ -2,11 +2,13 @@
 
 ## **Fast ARP &amp; TCP Port Checker in Rust version 0.0.15**
 
-*ripcheck* v0.0.16 is now a beta version, and is my first project as a beginner using Rust.
+*ripcheck* v0.0.17 is now a beta version, and is my first project as a beginner using Rust.
 
-It has only been tested on Windows, though it will eventually run on Linux etc.
+RipCheck only runs on Windows, and currently the original plan for it to build & run on Linux is
+on hold due to a number of Windows specific features which are acumulating and the presence
+of alternative tools that already work well (enough) on Linux.
 
-**CAUTION:** It can cause excessive CPU or Network traffic with an injudicious parameter list.
+**CAUTION:** RipCheck can cause excessive CPU or Network traffic with an injudicious parameter list.
 
     Option to limit thread count has been added -- **YOU MUST RESTRICT IT** for your environment.
 

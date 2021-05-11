@@ -5,6 +5,7 @@
 // #![feature(rustc_private)]
 #[macro_use]
 extern crate lazy_static;
+extern crate static_vcruntime;
 mod mactovendors;
 
 use regex::Regex;

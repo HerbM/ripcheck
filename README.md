@@ -2,15 +2,19 @@
 
 ## **Fast ARP &amp; TCP Port Checker in Rust version 0.0.15**
 
-*ripcheck* v0.0.17 is now a beta version, and is my first project as a beginner using Rust.
+*ripcheck* v0.0.18 is now a beta version, and is my first project as a beginner using Rust.
+
+Changed to STATICALLY LINK VCRuntime: https://crates.io/crates/static_vcruntime
 
 RipCheck only runs on Windows, and currently the original plan for it to build & run on Linux is
-on hold due to a number of Windows specific features which are acumulating and the presence
+on hold due to a number of Windows specific features which are accumulating and the presence
 of alternative tools that already work well (enough) on Linux.
 
 **CAUTION:** RipCheck can cause excessive CPU or Network traffic with an injudicious parameter list.
 
     Option to limit thread count has been added -- **YOU MUST RESTRICT IT** for your environment.
+
+    The default limit is 500 threads * CPUThreads
 
     It may use:
 
@@ -19,11 +23,13 @@ of alternative tools that already work well (enough) on Linux.
 
     A /24 bit network will require about 1500 threads to check 3 ports plus ARP and Reverse DNS
 
+
+
 ### Added an index option --index to insert a numerical column for later sorting (outside of ripcheck)
 
 ### Changes to simplify parameter requirements
-Several of the parameters names are no longer required for: IPs, Ranges, cidr nets, ports
-The parameter names are still accpeted but may may be removed in the future.
+Several of the parameters names are no longer required for: IPs, Ranges, cidr/nets, ports
+The parameter names are still accepted but may may be removed in the future.
 It was complicated than necessary and is now far more ergonomic.
 Expect future changes.
 

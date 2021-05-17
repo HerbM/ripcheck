@@ -1,13 +1,16 @@
 # ***ripcheck***
 
-## **Fast ARP &amp; TCP Port Checker in Rust version 0.0.15**
+## **Fast ARP &amp; TCP Port Checker in Rust version 0.0.19**
 
-*ripcheck* v0.0.18 is now a beta version, and is my first project as a beginner using Rust.
+*ripcheck* v0.0.19 is remains a beta version; it is my first project as a beginner using Rust.
 
+### Recent Changes
+Added Ping capability
 Changed to STATICALLY LINK VCRuntime: https://crates.io/crates/static_vcruntime
+Limit maxthreads to 500 * number of CPU threads
 
 RipCheck only runs on Windows, and currently the original plan for it to build & run on Linux is
-on hold due to a number of Windows specific features which are accumulating and the presence
+on hold due to the number of Windows specific features which are accumulating and the presence
 of alternative tools that already work well (enough) on Linux.
 
 **CAUTION:** RipCheck can cause excessive CPU or Network traffic with an injudicious parameter list.
@@ -70,12 +73,12 @@ TimeThis :  Elapsed Time :  00:00:05.044```
 
 ### Usage: RipCheck --help
 ```
-ripcheck 0.0.16
+ripcheck 0.0.19
 HerbM <HerbMartin@GMail.com>
 Fast ARP & TCP Port Checker in Rust
 
 USAGE:
-    ripcheck.exe [FLAGS] [OPTIONS] [--] [TARGETS]...
+    rc.exe [FLAGS] [OPTIONS] [--] [TARGETS]...
 
 ARGS:
     <TARGETS>...    Query targets
@@ -86,6 +89,7 @@ FLAGS:
     -i, --index       Add index column
     -l, --uselocal    Also try local DNS resolver
     -o, --noheader    Omit header from output
+    -P, --ping        Ping (ICMP) targets
     -R, --reverse     Reverse IP to name
     -M, --vendor      Show NIC vendor
     -v, --verbose     Print verbose information
@@ -102,4 +106,6 @@ OPTIONS:
     -p, --port <PORT>...             Ports to test
     -r, --range <RANGE>...           Query Address ranges
     -t, --timeout <TIMEOUT>          Timeout: seconds or milliseconds [default: 4000]
-```
+    ```
+maxthread limit of 4000 is due to being run with 4 cores having a total of 8 CPU threads
+4000 = 8 CPU threads * 500

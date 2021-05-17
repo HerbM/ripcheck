@@ -25,11 +25,14 @@ use dnsclient::sync::*;
 // use std::io::Command;
 
 //  TODO  Learn to do Git Merge etc.
+/// arp_for_MAC isn't picking up SLOW devices .11, .17 etc.
+/// Read CSV and structured STDIN
 /// 192.168.239.10 host.docker.internal weird hostname?????
 /// Rust unit tests
 /// Should show help for bad input -- later
 /// Add symbolic names for ports or protocols? Maybe groups like WinTest, LinuxTest, WebServer
-/// Read CSV and structured STDIN
+/// Faster & more efficient ARP
+/// faster Reverse lookup
 
 /// Add support for Ping, and maybe DNS, HTTP/S, email/SMTP, WinRM??? server checks etc checks
 ///      Maybe other protocols or even some UDP (only does TCP & ARP now)
@@ -47,6 +50,7 @@ use dnsclient::sync::*;
 /// SKIP: Use output structure and create an output controller
 /// SKIP: Continuous monitor and interval, maybe alerts... run programs on UP status change?
 
+/// DONE: Static linking
 /// DONE: Fix filename for no param name,
 /// DONE: multiple files
 /// DONE: Multi-thread DNS
@@ -75,8 +79,7 @@ use dnsclient::sync::*;
 /// DONE: Fix Rev DNS? it's not timing out appropriately
 
 /*
-Why do we need a queue?
-When “what” displays information about a network address, it would ideally like to display an “easier on the eyes” hostname rather than an IP address (eg. “dns.google” instead of “8.8.8.8”). To do this, it uses libc’s getnameinfo function.
+Do we need a target queue or channel? Could remove drain if threads handle queue automtically
 http://m4rw3r.github.io/rust/std/collections/
 https://locka99.gitbooks.io/a-guide-to-porting-c-to-rust/content/features_of_rust/collections.html
 https://www.poor.dev/posts/what-job-queue/
@@ -245,8 +248,10 @@ struct CheckConfig<'a> {
   showheader: bool,
   reverse:    bool,
   arp:        bool,
+  ping:       bool,
   vendor:     bool,
   index:      bool,
+  maxthreads: usize,
 }
 
 impl<'a> Default for CheckConfig<'a> {
@@ -263,9 +268,11 @@ impl<'a> Default for CheckConfig<'a> {
       csvOutput:     false,
       showheader:    true,
       arp:           false,
+      ping:          false,
       reverse:       false,
       vendor:        false,
       index:         false,
+      maxthreads:    get_maxthreads(),
     }
   }
 }
@@ -275,20 +282,20 @@ struct Target {
   hostname    : String,
   ipaddress   : String,
   index       : u32,
-  socketaddrs : std::vec::IntoIter<SocketAddr>,
-  reachable   : Vec<bool>,
+  // socketaddrs : std::vec::IntoIter<SocketAddr>,
+  // reachable   : Vec<bool>,
 }
 
 impl Default for Target {
   fn default() -> Target {
     let host: &str     = "localhost";
-    let socket: String = "localhost:135".to_string();
+    // let socket: String = "localhost:135".to_string();
     Target {
       hostname    : host.to_string(),
       ipaddress   : "127.0.0.3".to_string(),
-      socketaddrs : socket.to_socket_addrs().unwrap(),
+      // socketaddrs : socket.to_socket_addrs().unwrap(),
       index       : 0,
-      reachable   : Vec::with_capacity(5),
+      // reachable   : Vec::with_capacity(5),
     }
   }
 }
@@ -301,9 +308,10 @@ fn get_timeout(wait: u64) -> Duration {
   Duration::new(seconds, nanoseconds)
 }
 
+lazy_static!{ static ref THREADS: String = (500 * num_cpus::get()).to_string(); }
+lazy_static!{ static ref MATCHES: clap::ArgMatches = parse_args(); }
+
 fn hostname_to_ipaddress(hostname: &str) -> std::vec::IntoIter<std::net::SocketAddr> {
-  // let empty = Vec::new().into_iter();
-  // (format!("{}:0", hostname)).to_socket_addrs().unwrap()  /// .or_else(empty)
   match (format!("{}:0", hostname)).to_socket_addrs() {
     Ok(sa) => sa,
     _ => "0.0.0.0:0".to_socket_addrs().unwrap(),
@@ -333,38 +341,63 @@ fn parse_args() -> clap::ArgMatches {
     (@arg DRAIN:      -d --drain                      +takes_value default_value("0")      "Drain threads to N%"             )
     (@arg TIMEOUT: -w -t --wait --timeout             +takes_value default_value(WAIT)     "Timeout: seconds or milliseconds")
     (@arg NAMESERVER: -n --nameserver  --dns    ...   +takes_value                         "Nameservers to use"              )
-    (@arg INDEX:      -i --INDEX --index                                                   "Add index column"      )
+    (@arg INDEX:      -i --INDEX --index                                                   "Add index column"                )
     (@arg ARP:        -A --arp                                                             "ARP to resolve MAC address"      )
-    (@arg REVERSE:    -R --reverse                                                         "Reverse IP to name"      )
-    (@arg VENDOR:     -M --vendor                                                          "Show NIC vendor"      )
+    (@arg PING:       -P --ping                                                            "Ping (ICMP) targets"             )
+    (@arg REVERSE:    -R --reverse                                                         "Reverse IP to name"              )
+    (@arg VENDOR:     -M --vendor                                                          "Show NIC vendor"                 )
     (@arg LOCALDNS:   -l --uselocalDNS --localDNS     --uselocal                           "Also try local DNS resolver"     )
     (@arg VERBOSE:    -v --verbose                                                         "Print verbose information"       )
     (@arg CSVOUT:     -s --csvout --csv                                                    "Output CSV results"              )
     (@arg NOHEADER:   -o --omit   --noheader                                               "Omit header from output"         )
-    (@arg TIMING:    --TIMING     --timing             +hidden                             "Output timing trace"         )
-    (@arg DEBUG:     --DEBUG      --debug              +hidden                             "Debug output"          )
+    (@arg TIMING:    --TIMING     --timing             +hidden                             "Output timing trace"             )
+    (@arg DEBUG:     --DEBUG      --debug              +hidden                             "Debug output"                    )
   ).get_matches()
 }
 
-lazy_static!{ static ref THREADS: String = (500 * num_cpus::get()).to_string(); }
-lazy_static!{ static ref MATCHES: clap::ArgMatches = parse_args(); }
 
-fn arp_for_MAC(ipaddress: &str) -> String {
+fn _test_tcp_socket_address(address: &str, port: u16, timeout: Duration) -> bool {
+  let socket_name = format!("{}:{}", address, port);
+  if CONFIG.verbose { println!("socket_name: [{}]", socket_name) };
+  match &socket_name.parse() {
+    Ok(socket_addr)  => TcpStream::connect_timeout(socket_addr, timeout).is_ok(),
+    _ => false,
+  }
+}
+
+fn arp_for_MAC(ipaddress: &str) -> (String, bool) {
+  // std::thread::sleep(Duration::from_millis(1000));
   let arpcmd = "arp.exe";
-  /*let out =*/ std::process::Command::new(arpcmd)
-                  .args(&[ipaddress])
-                  .output().expect("Couldn't run arp");
-  //let _out = format!("{:?}", out);
+       // ping 192.168.239.17 -n 1 -i 1 -w 1000
+    // for _ in 1..=2 {
+    // /*let out =*/ std::process::Command::new("ping.exe")
+    //                 .args(&["-n", "1", "-i", "1", "-w", "200"])
+    //                 .output().expect("Couldn't run ping");
+    // }
+  let mut pinger = winping::Pinger::new().unwrap();
+  let mut buffer = winping::Buffer::new();
+  pinger.set_timeout(2000);
+  let pinged : bool = match pinger.send(ipaddress.parse::<IpAddr>().unwrap(), &mut buffer) {
+    Ok(rtt) => {
+      if CONFIG.verbose { eprintln!("Response time {} ms. from {}", rtt, ipaddress); }
+      true
+    },
+    _ => false,
+  };
+    // /*let out =*/ std::process::Command::new(arpcmd)
+                    // .args(&[ipaddress])
+                    // .output().expect("Couldn't run arp");
+    //let _out = format!("{:?}", out);
   let out = std::process::Command::new(arpcmd)
                   .args(&["-a", ipaddress])
                   .output().expect("Couldn't run arp -a");
   let out = format!("{:?}", out);
   if false { println!("arp output: [{}]", out) };
-  // let mut captures =  MACADDRESS.captures_iter(&out);
-  match MACADDRESS.captures_iter(&out).next() {
+  let mac = match MACADDRESS.captures_iter(&out).next() {
     Some(cap) => cap[1].to_string(),
     _ => "".to_string(),
-  }
+  };
+  (mac, pinged)
 }
 
 /*
@@ -400,11 +433,6 @@ fn get_range(range: &str) -> ipnet::Ipv4AddrRange { // Vec<String> {
   let end:   &String = bounds.get(1).unwrap();
   if false { println!("Ln:{} range bounds: #{:?}# #{:?}# start:#{:?}# end:#{:?}#", line!(), range, bounds, start, end); }
   Ipv4AddrRange::new(start.parse().unwrap(), end.parse().unwrap())
-                      // .map(|ip| {
-                      //   let ip = format!("{:?}", ip);
-                      //   if false { println!("Ln:{} [{}]", line!(), ip) };
-                      //   ip
-                      // })
 }
 
 fn valid_file(path: &str) -> Result<(),String> {
@@ -424,16 +452,18 @@ lazy_static!{
     timeout     : get_timeout(MATCHES.value_of ("TIMEOUT").unwrap().parse::<u64>().unwrap_or(4000)),
     outputType  : if MATCHES.is_present("CSVOUT") {OutputType::Csv} else {OutputType::Table},
     testports   : vec!["80", "135","445"],
-    arp         : MATCHES.is_present("ARP" ),
-    verbose     : MATCHES.is_present("VERBOSE" ),
-    timing      : MATCHES.is_present("TIMING" ),
-    debug       : MATCHES.is_present("DEBUG" ),
+    arp         : MATCHES.is_present("ARP"),
+    ping        : MATCHES.is_present("PING"),
+    verbose     : MATCHES.is_present("VERBOSE"),
+    timing      : MATCHES.is_present("TIMING"),
+    debug       : MATCHES.is_present("DEBUG"),
     csvOutput   : MATCHES.is_present("CSVOUT"),
     showheader  :!MATCHES.is_present("NOHEADER"),
     uselocalDNS : MATCHES.is_present("LOCALDNS"),
     reverse     : MATCHES.is_present("REVERSE"),
     vendor      : MATCHES.is_present("VENDOR"),
     index       : MATCHES.is_present("INDEX"),
+    maxthreads  : get_maxthreads(),
     // dnsserverlist: dnsDefaultServers,
   });
 }
@@ -463,15 +493,18 @@ fn get_portnumbers(portarg:&str) -> Vec<String> {   //
 }
 
 fn get_portlist(matches: &MATCHES) -> Vec<String> {   //
-  let targetports = matches.values_of("TARGETS")
-                .unwrap_or_default()
-                .filter(|p| valid_port(p).is_ok());
-  let portlist: Vec<String> = matches.values_of("PORT")
-                .unwrap_or_default()
-                .chain(targetports)
-                .flat_map(|portarg| get_portnumbers(&portarg)).collect();
-  if portlist.is_empty() { vec![DEFAULTPORT.to_string()] }
-  else                   { portlist }
+  // let targetports = matches.values_of("TARGETS")
+  //               .unwrap_or_default()
+  //               .filter(|p| valid_port(p).is_ok());
+  let portlist: Vec<String>  = matches.values_of("TARGETS")
+                                      .unwrap_or_default()
+                                      .filter(|p| valid_port(p).is_ok())
+                                      .chain(matches.values_of("PORT")
+                                      .unwrap_or_default())
+                                      .flat_map(|portarg| get_portnumbers(&portarg)).collect();
+  // if portlist.is_empty() { vec![]   }
+  // else                   { portlist }
+  portlist
 }
 
 fn valid_threads(t: &str) -> Result<usize, String> {
@@ -488,9 +521,8 @@ fn get_maxthreads() -> usize {
 
 fn main() -> io::Result<()> {
   let dnsDefaultServers: Vec<_> = get_default_dnsservers();
-  let MAXTHREADS:  usize = get_maxthreads();
-  let drain:       usize = MATCHES.value_of ("DRAIN").unwrap().parse::<usize>().unwrap_or(0);
-  let ports: Vec<String> = get_portlist(&MATCHES);
+  let drain:              usize = MATCHES.value_of ("DRAIN").unwrap().parse::<usize>().unwrap_or(0);
+  let ports:        Vec<String> = get_portlist(&MATCHES);
   if CONFIG.verbose {
     let testAddress =
     hostname_to_ipaddress("hamachi").filter(|a| a.is_ipv4());
@@ -524,30 +556,30 @@ fn main() -> io::Result<()> {
   if let Some(ts) = MATCHES.values_of("TARGETS") {
     for t in ts {
       match t {
-        h if (valid_host(h)) .is_ok() => hosts.push(h.to_string()),
-        r if (valid_range(r)).is_ok() => hosts.extend(get_range(r).map(|r| r.to_string())),
-        n if (valid_cidr(n)) .is_ok() =>
+        h if valid_host(h).is_ok() => hosts.push(h.to_string()),
+        r if valid_range(r).is_ok() => hosts.extend(get_range(r).map(|r| r.to_string())),
+        n if valid_cidr(n).is_ok() =>
           hosts.extend(get_nethosts(n).unwrap().map(|h| h.to_string())),
-        f if (valid_file(f)) .is_ok() => filelist.push(f.to_string()),
-        _ => (),
+        p if valid_port(p).is_ok() => (),
+        f if valid_file(f).is_ok() => filelist.push(f.to_string()),
+        e => eprintln!("Unrecognized parameter [{}]", e),
       }
     };
   }
-  hosts   .extend(MATCHES.values_of("HOST")
-            .unwrap_or_default()
-            .map(|r| r.to_string())
-            .chain(MATCHES.values_of("RANGE")
-              .unwrap_or_default()
-              .flat_map(|r| get_range(&r).map(|r| r.to_string()))
-            )
-          );
-  hosts   .extend(MATCHES.values_of("CIDR")
+  hosts.extend(MATCHES.values_of("HOST")
           .unwrap_or_default()
-          .flat_map(|net| get_nethosts(&net).unwrap().map(|h| h.to_string())));
+          .map(|r| r.to_string())
+          .chain(MATCHES.values_of("RANGE")
+            .unwrap_or_default()
+            .flat_map(|r| get_range(&r).map(|r| r.to_string())))
+          .chain(MATCHES.values_of("CIDR")
+            .unwrap_or_default()
+            .flat_map(|net| get_nethosts(&net)
+            .unwrap().map(|h| h.to_string()))));
   filelist.extend(MATCHES.values_of("FILENAME")
           .unwrap_or_default()
           .map(|h| h.to_string()));
-  if CONFIG.verbose { println!("Ln:{} hosts:{:?}", line!(), hosts) };
+  if CONFIG.verbose { eprintln!("Ln:{} hosts:{:?}", line!(), hosts) };
 
   // TODO review next session to ensure we allow all reasonable combinations of host entry
   // if piped_input() || from_file {
@@ -612,78 +644,71 @@ fn main() -> io::Result<()> {
       hostname  : host.to_string(),
       ipaddress : ipAddress.to_string(),
       index     : count,
-      reachable : Vec::with_capacity(ports.len()),
+      // reachable : Vec::with_capacity(ports.len()),
       ..Default::default()
     });
     targets.push(target);
   }
+
+  // Build Headers
   // let all_fail   = vec!["false"; port_count].join("\t");   // TODO: Add SomeOpen ???? column
   if CONFIG.showheader || CONFIG.csvOutput {
-    let portsref = &ports;
-    let widthfactor: usize = if CONFIG.csvOutput { 0 }   else { 1 };
-    let separator: &str    = if CONFIG.csvOutput { "," } else { "" };
+    let (widthfactor, separator) = if CONFIG.csvOutput { (0, ",") } else { (1, "") };
     let mut headers: Vec<String> = Vec::with_capacity(ports.len()+8);
     if CONFIG.index { headers.push(format!("{:<width$}", "Index", width=6 * widthfactor)); }
     headers.push(format!("{:<width$}", "IPAddress", width=widthfactor * 16));
-    headers.push(format!("{:<width$}", "Hostname",  width=widthfactor * std::cmp::max(31, hostwidth)));  // TODO: FIX WITH HOSTWIDTH
+    headers.push(format!("{:<width$}", "Hostname",  width=widthfactor * std::cmp::max(31, hostwidth)));
+    if CONFIG.ping { headers.push(format!("{:<width$}", "Pings", width=6 * widthfactor)); }
     if CONFIG.arp {
       headers.push(format!("{:<width$}", "MACaddress", width=19 * widthfactor));
       if CONFIG.vendor {
         headers.push(format!("{:<width$}", "MACvendor", width=10 * widthfactor))
       };
     }
-    for p in portsref {
+    for p in &ports {
       let portname = format!("Port{}", p);
       headers.push(format!("{:<width$}", portname, width=(portname.len()+1)*widthfactor));
     }
     println!("{}", headers.join(separator));
   }
 
-  let maxthreads = MAXTHREADS / (ports.len() + 2);
+  let maxthreads = CONFIG.maxthreads / (ports.len() + 2);
   let maxthreads = if maxthreads <  1 {  1 } else { maxthreads };
-  if CONFIG.verbose { println!("maxthreads: {}  from MAXTHREADS: {}", maxthreads, MAXTHREADS) };
+  if CONFIG.verbose { println!("maxthreads: {}  from config.maxthreads: {}", maxthreads, CONFIG.maxthreads) };
   let mut threads: VecDeque<std::thread::JoinHandle<()>> = VecDeque::with_capacity(maxthreads);
   for target in targets.into_iter() {
     let portlist = ports.clone();
     let resolver = dnsClient.clone();
-    // let config = config.clone();
     threads.push_front(std::thread::spawn(move || {
       test_tcp_portlist(&target, &portlist, hostwidth, &resolver)
     }));
     if threads.len() > maxthreads {
-      // println!("Draining queue: current:{} max:{}", threads.len(), maxthreads);
+      // eprintln!("Draining queue: current:{} max:{}", threads.len(), maxthreads);
       while threads.len() > maxthreads * drain / 100 {
         threads.pop_back().take().map(|t| t.join()) ;
       }
-      if CONFIG.verbose { println!("After draining: current:{} max:{}", threads.len(), maxthreads) };
+      if CONFIG.verbose { eprintln!("After draining: current:{} max:{}", threads.len(), maxthreads) };
     }
   }
-  for t in threads { let _ = t.join(); };
+
+  for t in threads { let _ = t.join(); };  // Wait on all threads
   Ok(())
 }
 
 fn test_tcp_socket_address(address: &str, port: u16, timeout: Duration) -> bool {
   let socket_name = format!("{}:{}", address, port);
-  if CONFIG.verbose { println!("socket_name: [{}]", socket_name) };
+  if CONFIG.verbose { eprintln!("socket_name: [{}]", socket_name) };
   match &socket_name.parse() {
     Ok(socket_addr)  => TcpStream::connect_timeout(socket_addr, timeout).is_ok(),
     _ => false,
   }
 }
 
-
 fn test_tcp_portlist(target: &Target, ports: &[String], hostwidth: usize, dnsclient: &DNSClient) {
   let tid = thread_id::get();
   let start = Instant::now();
   let name: &str = &target.hostname;
   let mut threads: Vec<std::thread::JoinHandle<bool>> = vec![];
-  if CONFIG.verbose {
-    let test = "142.250.68.164";
-    let ip: std::net::IpAddr = test.parse().unwrap();
-    let testname = dns_lookup::lookup_addr(&ip).unwrap();
-    // https://docs.rs/dns-lookup/1.0.6/dns_lookup/
-    eprintln!("Reverse: {:#?}", testname);
-  }
   if CONFIG.timing { eprintln!("{:06} L{:04} Elapsed: {:>6.3}  {:<16} START_RESOLVE", tid, line!(), start.elapsed().as_secs_f32(), name); }
   let address: String  = match name.as_bytes()[0].is_ascii_digit() {
     true  => String::from(name),
@@ -709,10 +734,9 @@ fn test_tcp_portlist(target: &Target, ports: &[String], hostwidth: usize, dnscli
     }
   };
   if CONFIG.timing { eprintln!("{:06} L{:04} Elapsed: {:>6.3}  {:<16} ARP_SPAWN", tid, line!(), start.elapsed().as_secs_f32(), name); }
-  let arpthread: Option<std::thread::JoinHandle<String>> = if CONFIG.arp && !address.is_empty() {
+  let arpthread: Option<std::thread::JoinHandle<(String, bool)>> = if (CONFIG.ping || CONFIG.arp) && !address.is_empty() {
     let address = address.to_string();
-    Some(std::thread::spawn(move || -> String {
-      arp_for_MAC(&address)      }))
+    Some(std::thread::spawn(move || -> (String, bool) { arp_for_MAC(&address) }))
   } else { None };
   if CONFIG.timing { eprintln!("{:06} L{:04} Elapsed: {:>6.3}  {:<16} REV_SPAWN", tid, line!(), start.elapsed().as_secs_f32(), name); }
   let reversethread: Option<std::thread::JoinHandle<String>> =
@@ -740,15 +764,15 @@ fn test_tcp_portlist(target: &Target, ports: &[String], hostwidth: usize, dnscli
     }));
   }
   if CONFIG.timing { eprintln!("{:06} L{:04} Elapsed: {:>6.3}  {:<16} PORT_SPAWNED", tid, line!(), start.elapsed().as_secs_f32(), name); }
-  let widthfactor: usize = if CONFIG.csvOutput { 0 }   else { 1 };
-  let separator: &str    = if CONFIG.csvOutput { "," } else { "" };
+  let (widthfactor, separator) = if CONFIG.csvOutput { (0, ",") } else { (1, "") };
   let mut output: Vec<String> = Vec::with_capacity(ports.len()+8);
   if CONFIG.index { output.push(format!("{:0>5}{: <width$}", target.index, "", width=widthfactor)); }
   output.push(format!("{:<width$}", address, width=widthfactor * 16));
 
   if CONFIG.timing { eprintln!("{:06} L{:04} Elapsed: {:>6.3}  {:<16} PORT_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
   let results: Vec<bool> = threads.into_iter()
-                                  .map(|t| t.join().unwrap_or(false))
+                                  .map(|t| t.join()
+                                  .unwrap_or(false))
                                   .collect();
   if CONFIG.timing { eprintln!("{:06} L{:04} Elapsed: {:>6.3}  {:<16} REV_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
   let name = match reversethread {
@@ -756,13 +780,13 @@ fn test_tcp_portlist(target: &Target, ports: &[String], hostwidth: usize, dnscli
     _ => name.to_string(),
   };
   if CONFIG.timing { eprintln!("{:06} L{:04} Elapsed: {:>6.3}  {:<16} ARP_JOIN", tid, line!(), start.elapsed().as_secs_f32(), name); }
-  output.push(format!("{:<width$}", name,    width=widthfactor * std::cmp::max(31, hostwidth)));
+  output.push(format!("{:<width$}", name, width=widthfactor * std::cmp::max(31, hostwidth)));
+  let (mac, pinged) = match arpthread {
+    Some(t) => t.join().unwrap(),
+    _ => ("".to_string(), false),
+  };
+  if CONFIG.ping { output.push(format!("{:<width$}", pinged, width=6 * widthfactor)); }
   if CONFIG.arp {
-    let mac = match arpthread {
-      Some(t) => t.join().unwrap(),
-      _ => "".to_string(),
-    };
-    // if arp { arp_for_MAC(&address) } else { "".to_string() };
     output.push(format!("{:<width$}", mac, width=19 * widthfactor));
     if CONFIG.vendor {
       output.push(format!("{:<width$}", mactovendors::mac_to_vendor(&mac), width=10*widthfactor))
@@ -771,13 +795,20 @@ fn test_tcp_portlist(target: &Target, ports: &[String], hostwidth: usize, dnscli
   if CONFIG.timing { eprintln!("{:06} L{:04} Elapsed: {:>6.3}  {:<16} ALL_JOINS_COMPLETE", tid, line!(), start.elapsed().as_secs_f32(), name); }
   let mut r = results.iter();
   for p in ports {
-    let portname = format!("Port{}", p);
-    let namelength = portname.len();
-    let w = if CONFIG.showheader { namelength + 1 }  else { 6 };
-    output.push(format!("{:<width$}", r.next().unwrap(), width= w * widthfactor));
+    let portwidth = if CONFIG.showheader { format!("Port{} ", p).len() } else { 6 };
+    output.push(format!("{:<width$}", r.next().unwrap(), width=portwidth * widthfactor));
   }
   if CONFIG.timing {
     eprintln!("{:06} L{:04} Elapsed: {:>6.3}  {:<16} OUTPUT", tid, line!(), start.elapsed().as_secs_f32(), name);
   }
   println!("{}", output.join(separator));
+}
+
+
+#[cfg(test)]
+mod tests {
+  #[test]
+  fn it_works() {
+    assert_eq!(2 + 2, 4);
+  }
 }

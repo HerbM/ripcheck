@@ -1,6 +1,7 @@
 [package]
 name    = "ripcheck"
-version = "0.0.18" # Mostly same as .16/.17 Static linked, Limit: CPUThreads * 500
+version = "0.0.19" # Adds ping capability
+# Mostly same as .16/.17 Static linked, Limit: CPUThreads * 500
 # Simplified args, Config, Index,Threaded DNS/Rev/Arp/MACVendors/pfh/formatting/timings
 authors = ["HerbM <HerbMartin@GMail.com>"]
 description = "Fast ARP & TCP Port Checker in Rust"
@@ -12,6 +13,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bindings = { path = "bindings" }
+windows = "0.9.1" # This should match the version you used in the bindings crate
+
 static_vcruntime = "1.5"
 libc = "0.2.94"
 clap = "3.0.0-beta.2"
@@ -31,6 +35,7 @@ systemstat = "0.1.7"
 phf = { version = "0.8.*", features = ["macros"] }
 thread-id = "4.0.*"
 num_cpus = "1.13.*"
+winping = "0.10.1"
 
 # fs = "0.0.5"
 # resolve = "0.2.0"
